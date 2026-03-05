@@ -1,58 +1,73 @@
 # Adaptive Cruise Control
 
-Simple demo for an ACC system on a raspberry pi pico w using a ultrasound sensor with freeRTOS and various tasks to monitor a constant distance from the veichle upfront, while signaling the distance to the user via LED.
+Simple demo of an ACC system on a Raspberry Pi Pico W using an ultrasound sensor with FreeRTOS.
+Multiple tasks monitor a constant distance from the vehicle ahead while signaling the distance to the user via LEDs.
 
-## Dependencies
+## Prerequisites
 
-### 0. Configure Groups
+### 1. Configure user groups (Linux)
 
-``` bash
-# add user to groups
+```bash
 sudo usermod -a -G plugdev $USER
 sudo usermod -a -G dialout $USER
 
-# To mount PICO without sudo
-echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="0003", MODE="0660", GROUP="plugdev"' | sudo tee /etc/udev/rules.d/99-rpi-pico.rules > /dev/null
+# Allow mounting the Pico without sudo
+echo 'SUBSYSTEM=="usb", ATTR{idVendor}=="2e8a", ATTR{idProduct}=="0003", MODE="0660", GROUP="plugdev"' \
+  | sudo tee /etc/udev/rules.d/99-rpi-pico.rules > /dev/null
 ```
 
-(reboot your system after)
+> Reboot after applying these changes.
 
-### 1. Install Pico SDK
-
-First, make sure the Pico SDK is properly installed and configured:
+### 2. Install the Pico SDK
 
 ```bash
-# Install dependencies
 sudo apt install cmake g++ gcc-arm-none-eabi doxygen libnewlib-arm-none-eabi git python3
+
 git clone --recurse-submodules https://github.com/raspberrypi/pico-sdk.git $HOME/pico-sdk
 
-# Configure environment
-echo "export PICO_SDK_PATH=$HOME/pico-sdk" >> ~/.bashrc
+echo 'export PICO_SDK_PATH=$HOME/pico-sdk' >> ~/.bashrc
 source ~/.bashrc
 ```
 
-### 3. Clone this repository
+## Clone
 
 ```bash
-git clone --recursive -b noros https://github.com/cscribano/RTES_freertos_PICO.git
+git clone --recurse-submodules https://github.com/simomux/ACC.git
 ```
 
-## Compile the code
+## Build
 
 ```bash
 cd ACC
-mkdir build
-cd build
+mkdir build && cd build
 cmake -DPICO_BOARD=pico_w ..
-make
+make -j
 ```
 
-## Flash an example (linux)
+The firmware will be generated at `build/acc.uf2`.
 
-To flash hold the boot button, plug the USB and run:
+## Flash
+
+Hold the **BOOTSEL** button on the Pico, plug in the USB cable, then:
+
+### Linux
 
 ```bash
-cp main.uf2 $(findmnt -rn -o TARGET -S LABEL=RPI-RP2)/
+cp build/acc.uf2 $(findmnt -rn -o TARGET -S LABEL=RPI-RP2)/
 ```
 
-### On windows simply drag the file in the disk after connecting in bootsel mode
+### Windows
+
+Drag and drop `acc.uf2` onto the `RPI-RP2` drive.
+
+### WSL
+
+To forward the Pico's USB to WSL, run these commands from **PowerShell (as Administrator)** on the Windows host:
+
+```powershell
+usbipd list                          # find the Pico's BUSID
+usbipd bind --busid <BUSID>          # share the device (one-time)
+usbipd attach --wsl --busid <BUSID>  # attach to WSL
+```
+
+> Requires [usbipd-win](https://github.com/dorssel/usbipd-win) installed on Windows.
