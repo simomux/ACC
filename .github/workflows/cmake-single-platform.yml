@@ -29,10 +29,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib build-essential
 
+      # Cache the Pico SDK to speed up build.
+      - name: Cache Pico SDK
+        id: cache-sdk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.PICO_SDK_PATH }}
+          key: pico-sdk-${{ hashFiles('.github/workflows/cmake-single-platform.yml') }}
+
+      # Clone only specific submodules to reduce clone time and cache size.
       - name: Clone Pico SDK
+        if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git "$PICO_SDK_PATH"
-          cd "$PICO_SDK_PATH" && git submodule update --init
+          cd "$PICO_SDK_PATH" && git submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver lib/lwip
 
       - name: Configure CMake
         run: cmake -B build -DPICO_BOARD=pico_w
