@@ -35,7 +35,7 @@ jobs:
           cd "$PICO_SDK_PATH" && git submodule update --init
 
       - name: Configure CMake
-        run: cmake -B build -DPICO_BOARD=pico
+        run: cmake -B build -DPICO_BOARD=pico_w
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
