@@ -1,12 +1,17 @@
 # Define the executable
 add_executable(acc
     main.c
+    task_sensor.c
+    task_dimmer.c
+    task_led.c
 )
 
-# Link against Pico, FreeRTOS
+# Link against Pico, FreeRTOS, hardware drivers
 target_link_libraries(acc
     pico_stdlib
     pico_async_context_freertos
+    hardware_adc
+    hardware_timer
     FreeRTOS-Kernel FreeRTOS-Kernel-Heap4
 )
 

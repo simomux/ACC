@@ -3,54 +3,33 @@
 #include "pico/stdlib.h"
 #include "FreeRTOS.h"
 #include "task.h"
+#include "queue.h"
 
-/* RGB LED pins */
-#define LED_R_PIN 13
-#define LED_G_PIN 14
-#define LED_B_PIN 15
+#include "common.h"
+#include "task_sensor.h"
+#include "task_dimmer.h"
+#include "task_led.h"
 
-#define MAIN_TASK_PRIORITY      ( tskIDLE_PRIORITY + 2UL )
-#define LED_TASK_PRIORITY       ( tskIDLE_PRIORITY + 1UL )
+/* Shared mailbox queues */
+QueueHandle_t xQueueDistance;
+QueueHandle_t xQueueThreshold;
 
-#define MAIN_TASK_STACK_SIZE    configMINIMAL_STACK_SIZE
-#define LED_TASK_STACK_SIZE     configMINIMAL_STACK_SIZE
+#define SENSOR_TASK_PRIORITY    ( tskIDLE_PRIORITY + 3UL )
+#define DIMMER_TASK_PRIORITY    ( tskIDLE_PRIORITY + 2UL )
+#define LED_TASK_PRIORITY       ( tskIDLE_PRIORITY + 2UL )
+#define DEBUG_TASK_PRIORITY     ( tskIDLE_PRIORITY + 1UL )
 
-static void led_rgb_init(void) {
-    gpio_init(LED_R_PIN);
-    gpio_init(LED_G_PIN);
-    gpio_init(LED_B_PIN);
-    gpio_set_dir(LED_R_PIN, GPIO_OUT);
-    gpio_set_dir(LED_G_PIN, GPIO_OUT);
-    gpio_set_dir(LED_B_PIN, GPIO_OUT);
-}
+#define TASK_STACK_SIZE         ( configMINIMAL_STACK_SIZE )
 
-static void led_rgb_set(bool r, bool g, bool b) {
-    gpio_put(LED_R_PIN, r);
-    gpio_put(LED_G_PIN, g);
-    gpio_put(LED_B_PIN, b);
-}
-
-void led_task(__unused void *params) {
-    led_rgb_init();
-    printf("led_task starts\n");
-    while (true) {
-        led_rgb_set(false, true, false);   /* Green */
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        led_rgb_set(true, true, false);    /* Yellow (R+G) */
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        led_rgb_set(true, false, false);   /* Red */
-        vTaskDelay(pdMS_TO_TICKS(1000));
-        led_rgb_set(false, false, false);  /* Off */
+void vTaskDebug(void *params) {
+    (void)params;
+    float distance = 0.0f;
+    float threshold = 0.0f;
+    for (;;) {
+        xQueuePeek(xQueueDistance,  &distance,  0);
+        xQueuePeek(xQueueThreshold, &threshold, 0);
+        printf("dist=%.1f cm  thr=%.1f cm\n", distance, threshold);
         vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-
-void main_task(__unused void *params) {
-    xTaskCreate(led_task, "LedTask", LED_TASK_STACK_SIZE, NULL, LED_TASK_PRIORITY, NULL);
-    int count = 0;
-    while (true) {
-        printf("Hello from ACC count=%u\n", count++);
-        vTaskDelay(pdMS_TO_TICKS(3000));
     }
 }
 
@@ -58,7 +37,23 @@ int main(void) {
     stdio_init_all();
     sleep_ms(2000);
     printf("Starting ACC...\n");
-    xTaskCreate(main_task, "MainThread", MAIN_TASK_STACK_SIZE, NULL, MAIN_TASK_PRIORITY, NULL);
+
+    /* Create mailbox queues (depth 1) */
+    xQueueDistance  = xQueueCreate(1, sizeof(float));
+    xQueueThreshold = xQueueCreate(1, sizeof(float));
+
+    /* Seed initial values */
+    float init_dist = 999.0f;
+    float init_thr  = 50.0f;
+    xQueueOverwrite(xQueueDistance,  &init_dist);
+    xQueueOverwrite(xQueueThreshold, &init_thr);
+
+    /* Create tasks */
+    xTaskCreate(vTaskSensor, "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
+    xTaskCreate(vTaskDimmer, "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);
+    xTaskCreate(vTaskLED,    "LED",    TASK_STACK_SIZE, NULL, LED_TASK_PRIORITY,    NULL);
+    xTaskCreate(vTaskDebug,  "Debug",  TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);
+
     vTaskStartScheduler();
     return 0;
 }
