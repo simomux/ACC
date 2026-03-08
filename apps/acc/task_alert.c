@@ -6,21 +6,36 @@
 #include "common.h"
 #include "task_alert.h"
 
-/* --- LED helpers --- */
+/* --- LED helpers (PWM driven for color mixing) --- */
+
+#define LED_PWM_WRAP  255  /* 8-bit resolution */
 
 static void led_rgb_init(void) {
-    gpio_init(LED_R_PIN);
-    gpio_init(LED_G_PIN);
-    gpio_init(LED_B_PIN);
-    gpio_set_dir(LED_R_PIN, GPIO_OUT);
-    gpio_set_dir(LED_G_PIN, GPIO_OUT);
-    gpio_set_dir(LED_B_PIN, GPIO_OUT);
+    gpio_set_function(LED_R_PIN, GPIO_FUNC_PWM);
+    gpio_set_function(LED_G_PIN, GPIO_FUNC_PWM);
+    gpio_set_function(LED_B_PIN, GPIO_FUNC_PWM);
+
+    /* Configure each slice with the same wrap value */
+    uint slices[] = {
+        pwm_gpio_to_slice_num(LED_R_PIN),
+        pwm_gpio_to_slice_num(LED_G_PIN),
+        pwm_gpio_to_slice_num(LED_B_PIN)
+    };
+    for (int i = 0; i < 3; i++) {
+        pwm_set_wrap(slices[i], LED_PWM_WRAP);
+        pwm_set_enabled(slices[i], true);
+    }
+    /* Start with all LEDs off */
+    pwm_set_gpio_level(LED_R_PIN, 0);
+    pwm_set_gpio_level(LED_G_PIN, 0);
+    pwm_set_gpio_level(LED_B_PIN, 0);
 }
 
-static void led_rgb_set(bool r, bool g, bool b) {
-    gpio_put(LED_R_PIN, r);
-    gpio_put(LED_G_PIN, g);
-    gpio_put(LED_B_PIN, b);
+/* Set LED color with 0-255 brightness per channel */
+static void led_rgb_set(uint8_t r, uint8_t g, uint8_t b) {
+    pwm_set_gpio_level(LED_R_PIN, r);
+    pwm_set_gpio_level(LED_G_PIN, g);
+    pwm_set_gpio_level(LED_B_PIN, b);
 }
 
 /* --- Buzzer helpers --- */
@@ -75,11 +90,11 @@ void vTaskAlert(void *params) {
 
         if (distance > threshold * 2.0f) {
             /* Far away — green, buzzer off */
-            led_rgb_set(false, true, false);
+            led_rgb_set(0, 255, 0);
             buzzer_off();
         } else if (distance > threshold) {
-            /* Approaching — yellow, slow beep (toggle every 5 ticks = ~2 Hz) */
-            led_rgb_set(true, true, false);
+            /* Approaching — orange, slow beep (toggle every 5 ticks = ~2 Hz) */
+            led_rgb_set(255, 60, 0);
             if ((tick_count % 10) < 5) {
                 buzzer_on(1000);
             } else {
@@ -87,7 +102,7 @@ void vTaskAlert(void *params) {
             }
         } else {
             /* Too close — red, fast beep (toggle every 1 tick = ~10 Hz) */
-            led_rgb_set(true, false, false);
+            led_rgb_set(255, 0, 0);
             if (tick_count % 2) {
                 buzzer_on(3000);
             } else {
