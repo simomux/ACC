@@ -8,7 +8,7 @@
 #include "common.h"
 #include "task_sensor.h"
 #include "task_dimmer.h"
-#include "task_led.h"
+#include "task_alert.h"
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
@@ -16,7 +16,7 @@ QueueHandle_t xQueueThreshold;
 
 #define SENSOR_TASK_PRIORITY    ( tskIDLE_PRIORITY + 3UL )
 #define DIMMER_TASK_PRIORITY    ( tskIDLE_PRIORITY + 2UL )
-#define LED_TASK_PRIORITY       ( tskIDLE_PRIORITY + 2UL )
+#define ALERT_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
 #define DEBUG_TASK_PRIORITY     ( tskIDLE_PRIORITY + 1UL )
 
 #define TASK_STACK_SIZE         ( configMINIMAL_STACK_SIZE )
@@ -51,7 +51,7 @@ int main(void) {
     /* Create tasks */
     xTaskCreate(vTaskSensor, "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskDimmer, "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);
-    xTaskCreate(vTaskLED,    "LED",    TASK_STACK_SIZE, NULL, LED_TASK_PRIORITY,    NULL);
+    xTaskCreate(vTaskAlert,  "Alert",  TASK_STACK_SIZE, NULL, ALERT_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDebug,  "Debug",  TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);
 
     vTaskStartScheduler();

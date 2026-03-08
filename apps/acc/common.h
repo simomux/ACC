@@ -17,6 +17,9 @@
 #define LED_G_PIN           14  // GP14 - Physical 19
 #define LED_B_PIN           15  // GP15 - Physical 20
 
+/* Passive buzzer (PWM driven) */
+#define BUZZER_PIN          16  // GP16 - Physical 21
+
 /* Distance range for the dimmer (cm) */
 #define THRESHOLD_MIN_CM    5
 #define THRESHOLD_MAX_CM    200
@@ -24,7 +27,7 @@
 /* Task periods (ms) */
 #define SENSOR_PERIOD_MS    60
 #define DIMMER_PERIOD_MS    200
-#define LED_PERIOD_MS       100
+#define ALERT_PERIOD_MS     100
 
 /* Shared queues (mailbox style, depth 1) */
 extern QueueHandle_t xQueueDistance;   /* float, cm */
