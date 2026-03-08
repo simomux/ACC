@@ -1,0 +1,27 @@
+{
+    "configurations": [
+        {
+            "name": "Pico",
+            "includePath": [
+                "${workspaceFolder}/**",
+                "${env:PICO_SDK_PATH}/src/common/**/include",
+                "${env:PICO_SDK_PATH}/src/rp2_common/**/include",
+                "${env:PICO_SDK_PATH}/src/rp2040/**/include",
+                "${env:PICO_SDK_PATH}/src/boards/include",
+                "${workspaceFolder}/build/generated/pico_base",
+                "${workspaceFolder}/FreeRTOS-Kernel/include",
+                "${workspaceFolder}/FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/include"
+            ],
+            "defines": [
+                "PICO_BOARD=\"pico_w\"",
+                "LIB_PICO_STDLIB=1",
+                "PICO_RP2040=1"
+            ],
+            "compilerPath": "/usr/bin/arm-none-eabi-gcc",
+            "cStandard": "c11",
+            "cppStandard": "c++17",
+            "intelliSenseMode": "gcc-arm"
+        }
+    ],
+    "version": 4
+}
