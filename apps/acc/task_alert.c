@@ -69,6 +69,14 @@ static void buzzer_off(void) {
     pwm_set_enabled(buzzer_slice, false);
 }
 
+/* --- Mute button helpers --- */
+
+static void mute_button_init(void) {
+    gpio_init(MUTE_BUTTON_PIN);
+    gpio_set_dir(MUTE_BUTTON_PIN, GPIO_IN);
+    gpio_pull_up(MUTE_BUTTON_PIN);
+}
+
 /* --- Alert task --- */
 
 void vTaskAlert(void *params) {
@@ -76,18 +84,29 @@ void vTaskAlert(void *params) {
 
     led_rgb_init();
     buzzer_init();
+    mute_button_init();
     printf("vTaskAlert started\n");
 
     float distance  = 0.0f;
     float threshold = THRESHOLD_MAX_CM;
     bool  braking   = false;
-    uint  tick_count = 0;  /* counts task iterations for beep toggling */
+    bool  muted     = false;
+    bool  btn_prev  = true;  /* pull-up: idle = HIGH */
+    uint  tick_count = 0;
 
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
         xQueuePeek(xQueueDistance,  &distance,  0);
         xQueuePeek(xQueueThreshold, &threshold, 0);
         xQueuePeek(xQueueBrake,     &braking,   0);
+
+        /* Detect button press (falling edge: HIGH → LOW) */
+        bool btn_now = gpio_get(MUTE_BUTTON_PIN);
+        if (btn_prev && !btn_now) {
+            muted = !muted;
+            printf("Buzzer %s\n", muted ? "MUTED" : "UNMUTED");
+        }
+        btn_prev = btn_now;
 
         /* Warning zone: threshold + 30% + 20cm fixed margin */
         float warning_dist = threshold * 1.3f + 20.0f;
@@ -101,23 +120,23 @@ void vTaskAlert(void *params) {
             } else {
                 led_rgb_set(0, 0, 0);
             }
-            buzzer_on(4000);
+            if (!muted) buzzer_on(4000); else buzzer_off();
         } else if (distance > warning_dist) {
             /* Far away — green, buzzer off */
             led_rgb_set(0, 255, 0);
             buzzer_off();
         } else if (distance > threshold) {
-            /* Approaching — orange, slow beep (toggle every 5 ticks = ~2 Hz) */
+            /* Approaching — orange, slow beep (~2 Hz) */
             led_rgb_set(255, 60, 0);
-            if ((tick_count % 10) < 5) {
+            if (!muted && (tick_count % 10) < 5) {
                 buzzer_on(1000);
             } else {
                 buzzer_off();
             }
         } else {
-            /* Too close — red, fast beep (toggle every 1 tick = ~10 Hz) */
+            /* Too close — red, fast beep (~10 Hz) */
             led_rgb_set(255, 0, 0);
-            if (tick_count % 2) {
+            if (!muted && (tick_count % 2)) {
                 buzzer_on(3000);
             } else {
                 buzzer_off();

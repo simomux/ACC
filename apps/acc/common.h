@@ -20,6 +20,9 @@
 /* Passive buzzer (PWM driven) */
 #define BUZZER_PIN          16  // GP16 - Physical 21
 
+/* Mute button (active LOW, internal pull-up) */
+#define MUTE_BUTTON_PIN     17  // GP17 - Physical 22
+
 /* BH1750 light sensor (I2C) */
 #define BH1750_SDA_PIN      4   // GP4  - Physical 6
 #define BH1750_SCL_PIN      5   // GP5  - Physical 7
