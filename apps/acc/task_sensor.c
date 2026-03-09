@@ -40,6 +40,16 @@ static float measure_distance_cm(void) {
     return (float)duration_us / 58.0f;
 }
 
+/* Median-of-3 filter: rejects outlier readings from the HC-SR04 */
+static float median3(float a, float b, float c) {
+    if (a > b) { float t = a; a = b; b = t; }
+    if (b > c) { b = c; }
+    if (a > b) { b = a; }
+    return b;
+}
+
+#define INTER_MEASUREMENT_MS  10  /* gap between readings for echo decay */
+
 void vTaskSensor(void *params) {
     (void)params;
 
@@ -54,10 +64,28 @@ void vTaskSensor(void *params) {
 
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
-        float distance = measure_distance_cm();
-        if (distance >= 0.0f) {
-            xQueueOverwrite(xQueueDistance, &distance);
+        /* Take 3 rapid measurements */
+        float samples[3];
+        int valid = 0;
+        for (int i = 0; i < 3; i++) {
+            samples[i] = measure_distance_cm();
+            if (samples[i] >= 0.0f) valid++;
+            if (i < 2) vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
         }
+
+        if (valid == 3) {
+            float distance = median3(samples[0], samples[1], samples[2]);
+            xQueueOverwrite(xQueueDistance, &distance);
+        } else if (valid > 0) {
+            /* If only some readings valid, use first valid one */
+            for (int i = 0; i < 3; i++) {
+                if (samples[i] >= 0.0f) {
+                    xQueueOverwrite(xQueueDistance, &samples[i]);
+                    break;
+                }
+            }
+        }
+
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(SENSOR_PERIOD_MS));
     }
 }
