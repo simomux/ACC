@@ -20,6 +20,13 @@
 /* Passive buzzer (PWM driven) */
 #define BUZZER_PIN          16  // GP16 - Physical 21
 
+/* BH1750 light sensor (I2C) */
+#define BH1750_SDA_PIN      4   // GP4  - Physical 6
+#define BH1750_SCL_PIN      5   // GP5  - Physical 7
+#define BH1750_I2C          i2c0
+#define BH1750_ADDR         0x23
+#define BRAKE_LUX_THRESHOLD 500 /* lux above ambient → brake light detected */
+
 /* Distance range for the dimmer (cm) */
 #define THRESHOLD_MIN_CM    5
 #define THRESHOLD_MAX_CM    200
@@ -28,9 +35,11 @@
 #define SENSOR_PERIOD_MS    60
 #define DIMMER_PERIOD_MS    200
 #define ALERT_PERIOD_MS     100
+#define BRAKE_PERIOD_MS     100
 
 /* Shared queues (mailbox style, depth 1) */
 extern QueueHandle_t xQueueDistance;   /* float, cm */
 extern QueueHandle_t xQueueThreshold;  /* float, cm */
+extern QueueHandle_t xQueueBrake;      /* bool, brake detected */
 
 #endif

@@ -9,12 +9,15 @@
 #include "task_sensor.h"
 #include "task_dimmer.h"
 #include "task_alert.h"
+#include "task_brake.h"
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
 QueueHandle_t xQueueThreshold;
+QueueHandle_t xQueueBrake;
 
 #define SENSOR_TASK_PRIORITY    ( tskIDLE_PRIORITY + 3UL )
+#define BRAKE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 3UL )
 #define DIMMER_TASK_PRIORITY    ( tskIDLE_PRIORITY + 2UL )
 #define ALERT_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
 #define DEBUG_TASK_PRIORITY     ( tskIDLE_PRIORITY + 1UL )
@@ -35,21 +38,28 @@ void vTaskDebug(void *params) {
 
 int main(void) {
     stdio_init_all();
-    sleep_ms(2000);
+    /* Wait until USB serial is connected (or timeout after 10s) */
+    for (int i = 0; i < 100 && !stdio_usb_connected(); i++) {
+        sleep_ms(100);
+    }
     printf("Starting ACC...\n");
 
     /* Create mailbox queues (depth 1) */
     xQueueDistance  = xQueueCreate(1, sizeof(float));
     xQueueThreshold = xQueueCreate(1, sizeof(float));
+    xQueueBrake     = xQueueCreate(1, sizeof(bool));
 
     /* Seed initial values */
     float init_dist = 999.0f;
     float init_thr  = 50.0f;
+    bool  init_brk  = false;
     xQueueOverwrite(xQueueDistance,  &init_dist);
     xQueueOverwrite(xQueueThreshold, &init_thr);
+    xQueueOverwrite(xQueueBrake,     &init_brk);
 
     /* Create tasks */
     xTaskCreate(vTaskSensor, "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
+    xTaskCreate(vTaskBrake,  "Brake",  TASK_STACK_SIZE, NULL, BRAKE_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDimmer, "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskAlert,  "Alert",  TASK_STACK_SIZE, NULL, ALERT_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDebug,  "Debug",  TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);

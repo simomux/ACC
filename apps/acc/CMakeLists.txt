@@ -4,6 +4,7 @@ add_executable(acc
     task_sensor.c
     task_dimmer.c
     task_alert.c
+    task_brake.c
 )
 
 # Link against Pico, FreeRTOS, hardware drivers
@@ -13,6 +14,7 @@ target_link_libraries(acc
     hardware_adc
     hardware_timer
     hardware_pwm
+    hardware_i2c
     FreeRTOS-Kernel FreeRTOS-Kernel-Heap4
 )
 

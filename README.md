@@ -1,7 +1,8 @@
 # Adaptive Cruise Control
 
-Simple demo of an ACC system on a Raspberry Pi Pico W using an ultrasound sensor with FreeRTOS.
-Multiple tasks monitor a constant distance from the vehicle ahead while signaling the distance to the user via LEDs.
+Simple demo of an ACC system on a Raspberry Pi Pico W using FreeRTOS.  
+Multiple tasks monitor the distance from the vehicle ahead (HC-SR04 ultrasonic sensor), detect brake lights (BH1750 light sensor), and alert the driver via an RGB LED and a passive buzzer.  
+A potentiometer (dimmer) lets the user adjust the distance threshold at runtime.
 
 ## Prerequisites
 

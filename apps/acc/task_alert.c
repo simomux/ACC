@@ -1,4 +1,5 @@
 #include <stdio.h>
+#include <stdbool.h>
 #include "pico/stdlib.h"
 #include "hardware/pwm.h"
 #include "FreeRTOS.h"
@@ -48,7 +49,7 @@ static void buzzer_init(void) {
     pwm_set_enabled(buzzer_slice, false);
 }
 
-/* Start the buzzer at a given frequency with 50% duty cycle */
+/* Start the buzzer at a given frequency with reduced duty cycle */
 static void buzzer_on(uint freq_hz) {
     uint32_t clk = 125000000;  /* default system clock */
     uint32_t wrap = clk / freq_hz - 1;
@@ -60,7 +61,7 @@ static void buzzer_on(uint freq_hz) {
     }
     pwm_set_clkdiv(buzzer_slice, (float)div);
     pwm_set_wrap(buzzer_slice, (uint16_t)wrap);
-    pwm_set_gpio_level(BUZZER_PIN, (uint16_t)(wrap / 2)); /* 50% duty */
+    pwm_set_gpio_level(BUZZER_PIN, (uint16_t)(wrap / 4)); /* ~25% duty = lower volume */
     pwm_set_enabled(buzzer_slice, true);
 }
 
@@ -79,16 +80,29 @@ void vTaskAlert(void *params) {
 
     float distance  = 0.0f;
     float threshold = THRESHOLD_MAX_CM;
+    bool  braking   = false;
     uint  tick_count = 0;  /* counts task iterations for beep toggling */
 
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
         xQueuePeek(xQueueDistance,  &distance,  0);
         xQueuePeek(xQueueThreshold, &threshold, 0);
+        xQueuePeek(xQueueBrake,     &braking,   0);
+
+        /* Warning zone: threshold + 30% + 20cm fixed margin */
+        float warning_dist = threshold * 1.3f + 20.0f;
 
         tick_count++;
 
-        if (distance > threshold * 2.0f) {
+        if (braking) {
+            /* Brake light detected — flashing red + continuous buzzer */
+            if (tick_count % 4 < 2) {
+                led_rgb_set(255, 0, 0);
+            } else {
+                led_rgb_set(0, 0, 0);
+            }
+            buzzer_on(4000);
+        } else if (distance > warning_dist) {
             /* Far away — green, buzzer off */
             led_rgb_set(0, 255, 0);
             buzzer_off();

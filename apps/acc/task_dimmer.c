@@ -18,9 +18,11 @@ void vTaskDimmer(void *params) {
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
         uint16_t raw = adc_read();  /* 0-4095 (12-bit) */
-        /* Map ADC range to threshold in cm */
+        /* Logarithmic mapping: more precision at low thresholds */
+        float normalized = (float)raw / 4095.0f;               /* 0.0 – 1.0 */
+        float curved = normalized * normalized;                 /* quadratic curve */
         float threshold = THRESHOLD_MIN_CM
-            + (float)raw / 4095.0f * (THRESHOLD_MAX_CM - THRESHOLD_MIN_CM);
+            + curved * (THRESHOLD_MAX_CM - THRESHOLD_MIN_CM);
 
         xQueueOverwrite(xQueueThreshold, &threshold);
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(DIMMER_PERIOD_MS));
