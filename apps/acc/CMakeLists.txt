@@ -5,9 +5,12 @@ add_executable(acc
     task_dimmer.c
     task_alert.c
     task_brake.c
+    task_oled.c
 )
 
-# Link against Pico, FreeRTOS, hardware drivers
+# Aggiungi la libreria u8g2
+add_subdirectory(${CMAKE_SOURCE_DIR}/3rdparty/u8g2 ${CMAKE_BINARY_DIR}/3rdparty/u8g2_build)
+
 target_link_libraries(acc
     pico_stdlib
     pico_async_context_freertos
@@ -16,6 +19,7 @@ target_link_libraries(acc
     hardware_pwm
     hardware_i2c
     FreeRTOS-Kernel FreeRTOS-Kernel-Heap4
+    u8g2
 )
 
 # Configure Pico IO settings

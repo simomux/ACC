@@ -10,6 +10,7 @@
 #include "task_dimmer.h"
 #include "task_alert.h"
 #include "task_brake.h"
+#include "task_oled.h"
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
@@ -58,11 +59,13 @@ int main(void) {
     xQueueOverwrite(xQueueBrake,     &init_brk);
 
     /* Create tasks */
+
     xTaskCreate(vTaskSensor, "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskBrake,  "Brake",  TASK_STACK_SIZE, NULL, BRAKE_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDimmer, "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskAlert,  "Alert",  TASK_STACK_SIZE, NULL, ALERT_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDebug,  "Debug",  TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);
+    xTaskCreate(vTaskOled,   "OLED",   TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);
 
     vTaskStartScheduler();
     return 0;
