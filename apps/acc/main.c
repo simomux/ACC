@@ -11,7 +11,7 @@
 #include "task_alert.h"
 #include "task_brake.h"
 #include "task_oled.h"
-#include "i2c_manager.h"
+// #include "i2c_manager.h"
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
