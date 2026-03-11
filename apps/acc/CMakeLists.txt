@@ -6,6 +6,7 @@ add_executable(acc
     task_alert.c
     task_brake.c
     task_oled.c
+    i2c_manager.c
 )
 
 # Aggiungi la libreria u8g2

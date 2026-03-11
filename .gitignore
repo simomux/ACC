@@ -1,2 +1,4 @@
 /build
 pico-sdk
+
+i2c_manager*

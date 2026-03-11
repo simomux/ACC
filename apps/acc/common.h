@@ -23,10 +23,15 @@
 /* Mute button (active LOW, internal pull-up) */
 #define MUTE_BUTTON_PIN     17  // GP17 - Physical 22
 
+/* I2C bus (shared) */
+#define I2C_SDA_PIN         4   // GP4  - Physical 6
+#define I2C_SCL_PIN         5   // GP5  - Physical 7
+// #define I2C_BUS          i2c0
+
 /* BH1750 light sensor (I2C) */
+#define BH1750_I2C_BUS      i2c0
 #define BH1750_SDA_PIN      4   // GP4  - Physical 6
 #define BH1750_SCL_PIN      5   // GP5  - Physical 7
-#define BH1750_I2C          i2c0
 #define BH1750_ADDR         0x23
 #define BRAKE_LUX_THRESHOLD 500 /* lux above ambient → brake light detected */
 
@@ -40,9 +45,17 @@
 #define ALERT_PERIOD_MS     100
 #define BRAKE_PERIOD_MS     100
 
+/* OLED display (I2C) */
+#define OLED_I2C_BUS        i2c1
+#define OLED_SDA_PIN        18
+#define OLED_SCL_PIN        19
+#define OLED_ADDR           0x3C
+
+
 /* Shared queues (mailbox style, depth 1) */
 extern QueueHandle_t xQueueDistance;   /* float, cm */
 extern QueueHandle_t xQueueThreshold;  /* float, cm */
 extern QueueHandle_t xQueueBrake;      /* bool, brake detected */
+extern QueueHandle_t xQueueLux;       /* float, ambient light in lux */
 
 #endif

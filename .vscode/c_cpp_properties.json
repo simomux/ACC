@@ -10,12 +10,16 @@
                 "${env:PICO_SDK_PATH}/src/boards/include",
                 "${workspaceFolder}/build/generated/pico_base",
                 "${workspaceFolder}/FreeRTOS-Kernel/include",
-                "${workspaceFolder}/FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/include"
+                "${workspaceFolder}/FreeRTOS-Kernel/portable/ThirdParty/GCC/RP2040/include",
+                "${workspaceFolder}/FreeRTOS-Kernel/portable/GCC/ARM_CM0"
             ],
             "defines": [
                 "PICO_BOARD=\"pico_w\"",
                 "LIB_PICO_STDLIB=1",
                 "PICO_RP2040=1"
+            ],
+            "forcedInclude": [
+                "${workspaceFolder}/FreeRTOSConfig.h"
             ],
             "compilerPath": "/usr/bin/arm-none-eabi-gcc",
             "cStandard": "c11",
