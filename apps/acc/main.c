@@ -12,7 +12,6 @@
 #include "task_brake.h"
 #include "task_oled.h"
 #include "task_microros.h"
-// #include "i2c_manager.h"
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
@@ -22,12 +21,10 @@ QueueHandle_t xQueueBrake;
 QueueHandle_t xQueueLux;
 
 
-#define I2C_TASK_PRIORITY       ( tskIDLE_PRIORITY + 4UL )
 #define SENSOR_TASK_PRIORITY    ( tskIDLE_PRIORITY + 3UL )
 #define BRAKE_TASK_PRIORITY     ( tskIDLE_PRIORITY + 3UL )
 #define DIMMER_TASK_PRIORITY    ( tskIDLE_PRIORITY + 2UL )
 #define ALERT_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
-#define DEBUG_TASK_PRIORITY     ( tskIDLE_PRIORITY + 1UL )
 #define OLED_TASK_PRIORITY      ( tskIDLE_PRIORITY + 1UL )
 #define MICROROS_TASK_PRIORITY  ( tskIDLE_PRIORITY + 2UL )
 
@@ -59,7 +56,6 @@ int main(void) {
     xQueueOverwrite(xQueueLux,         &init_lux);
     /* Create tasks */
 
-    //xTaskCreate(vTaskI2CManager, "I2C",    4096, NULL, I2C_TASK_PRIORITY,    NULL);
     xTaskCreate(vTaskSensor,     "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskBrake,      "Brake",  512, NULL, BRAKE_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDimmer,     "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);

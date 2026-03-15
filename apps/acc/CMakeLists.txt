@@ -17,7 +17,6 @@ add_executable(acc
     task_brake.c
     task_oled.c
     task_microros.c
-    # i2c_manager.c
 )
 
 # micro-ROS headers

@@ -21,7 +21,6 @@ Run:
 """
 
 import threading
-import math
 from collections import deque
 
 import rclpy

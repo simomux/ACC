@@ -1,5 +1,4 @@
 #include <stdio.h>
-#include <string.h>
 #include <stdbool.h>
 #include "pico/stdlib.h"
 #include "pico/time.h"
@@ -20,7 +19,6 @@
 #define OLED_REFRESH_MS 500
 
 static u8g2_t u8g2;
-static uint32_t frame_count = 0;
 
 /* ------------------------------------------------------------------ */
 /*  Bus reset — low-level only, no u8g2 calls (safe to call from       */
@@ -138,16 +136,11 @@ uint8_t u8x8_gpio_and_delay_pico(u8x8_t *u8x8,
 
 static void oled_init(void)
 {
-    printf("[OLED] init start\n");
-
     i2c_init(OLED_I2C_BUS, OLED_BAUDRATE);
     gpio_set_function(OLED_SDA_PIN, GPIO_FUNC_I2C);
     gpio_set_function(OLED_SCL_PIN, GPIO_FUNC_I2C);
     gpio_pull_up(OLED_SDA_PIN);
     gpio_pull_up(OLED_SCL_PIN);
-    printf("[OLED] i2c init done (bus=%s sda=%d scl=%d baud=%d)\n",
-           (OLED_I2C_BUS == i2c0) ? "i2c0" : "i2c1",
-           OLED_SDA_PIN, OLED_SCL_PIN, OLED_BAUDRATE);
 
     u8g2_Setup_sh1106_i2c_128x64_noname_1(
         &u8g2,
@@ -155,17 +148,10 @@ static void oled_init(void)
         u8x8_byte_pico_i2c,
         u8x8_gpio_and_delay_pico
     );
-    printf("[OLED] u8g2 setup done\n");
 
     u8g2_SetI2CAddress(&u8g2, OLED_ADDR << 1);
-    printf("[OLED] calling InitDisplay...\n");
     u8g2_InitDisplay(&u8g2);
-    printf("[OLED] InitDisplay done\n");
-
     u8g2_SetPowerSave(&u8g2, 0);
-    printf("[OLED] PowerSave off done\n");
-
-    printf("[OLED] ready\n");
 }
 
 /* ------------------------------------------------------------------ */
@@ -176,12 +162,7 @@ void vTaskOled(void *pvParameters)
 {
     (void)pvParameters;
 
-    printf("[OLED] task started, stack hwm: %lu words\n",
-           (unsigned long)uxTaskGetStackHighWaterMark(NULL));
-
     oled_init();
-
-    printf("[OLED] entering loop\n");
 
     float distance  = 0.0f;
     float threshold = 0.0f;
@@ -193,9 +174,6 @@ void vTaskOled(void *pvParameters)
 
     while (1)
     {
-        printf("[OLED] frame #%lu start\n", (unsigned long)frame_count);
-
-
         xQueuePeek(xQueueDistance,  &distance,  0);
         xQueuePeek(xQueueThreshold, &threshold, 0);
         xQueuePeek(xQueueBrake,     &brake,     0);
@@ -228,73 +206,8 @@ void vTaskOled(void *pvParameters)
 
             u8g2_DrawFrame(&u8g2, 0, 0, 128, 64);
 
-            printf("[OLED] calling SendBuffer...\n");
-        
         } while (u8g2_NextPage(&u8g2));
-        printf("[OLED] SendBuffer done\n");
-
-        frame_count++;
-        printf("[OLED] frame #%lu complete, stack hwm: %lu words\n",
-               (unsigned long)(frame_count - 1),
-               (unsigned long)uxTaskGetStackHighWaterMark(NULL));
 
         vTaskDelayUntil(&xLastWake, pdMS_TO_TICKS(OLED_REFRESH_MS));
-        printf("[OLED] delay done\n");
     }
 }
-
-/* ================================================================== */
-/*  ARCHIVED — I2C manager approach (single shared bus via queue)      */
-/*                                                                      */
-/*  Kept for reference. Was abandoned because the OLED's bulk writes   */
-/*  flooded the request queue, starving BH1750 reads and causing       */
-/*  deadlocks even with timeouts and fire-and-forget variants.         */
-/*  Solution: dedicate one I2C bus per device family.                  */
-/* ================================================================== */
-
-/*
-#include "i2c_manager.h"
-
-static QueueHandle_t xOledReply;
-
-static bool i2c_transact(I2COpType op,
-                         uint8_t   addr,
-                         uint8_t  *tx,  uint8_t tx_len,
-                         uint8_t   rx_len,
-                         uint8_t  *rx_out)
-{
-    I2CRequest req = {
-        .op          = op,
-        .addr        = addr,
-        .tx_len      = tx_len,
-        .rx_len      = rx_len,
-        .xReplyQueue = xOledReply,
-    };
-    if (tx && tx_len)
-        memcpy(req.tx_buf, tx, tx_len);
-
-    if (xQueueSendToBack(xQueueI2CRequest, &req, pdMS_TO_TICKS(50)) != pdTRUE) {
-        printf("[OLED] I2C request queue full!\n");
-        return false;
-    }
-
-    I2CReply reply;
-    if (xQueueReceive(xOledReply, &reply, pdMS_TO_TICKS(200)) != pdTRUE) {
-        printf("[OLED] I2C reply timeout!\n");
-        return false;
-    }
-
-    if (rx_out && reply.ok)
-        memcpy(rx_out, reply.rx_buf, rx_len);
-
-    return reply.ok;
-}
-
-// u8x8_byte_pico_i2c callback (manager version):
-// called i2c_transact(I2C_OP_WRITE, OLED_ADDR, buffer, buf_idx, 0, NULL)
-// on each flush — flooded the queue with ~30 requests per SendBuffer.
-
-// In vTaskOled:
-// xOledReply = xQueueCreate(1, sizeof(I2CReply));
-// oled_init() called without i2c_init() (owned by manager)
-*/
