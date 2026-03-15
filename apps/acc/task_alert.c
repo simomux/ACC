@@ -49,8 +49,8 @@ static void buzzer_init(void) {
     pwm_set_enabled(buzzer_slice, false);
 }
 
-/* Start the buzzer at a given frequency with reduced duty cycle */
-static void buzzer_on(uint freq_hz) {
+/* Start the buzzer at a given frequency; duty_div controls volume (higher = quieter) */
+static void buzzer_on(uint freq_hz, uint duty_div) {
     uint32_t clk = 125000000;  /* default system clock */
     uint32_t wrap = clk / freq_hz - 1;
     /* Keep wrap within 16-bit range using clock divider */
@@ -61,7 +61,7 @@ static void buzzer_on(uint freq_hz) {
     }
     pwm_set_clkdiv(buzzer_slice, (float)div);
     pwm_set_wrap(buzzer_slice, (uint16_t)wrap);
-    pwm_set_gpio_level(BUZZER_PIN, (uint16_t)(wrap / 4)); /* ~25% duty = lower volume */
+    pwm_set_gpio_level(BUZZER_PIN, (uint16_t)(wrap / duty_div));
     pwm_set_enabled(buzzer_slice, true);
 }
 
@@ -120,7 +120,7 @@ void vTaskAlert(void *params) {
             } else {
                 led_rgb_set(0, 0, 0);
             }
-            if (!muted) buzzer_on(4000); else buzzer_off();
+            if (!muted) buzzer_on(4000, 4); else buzzer_off();
         } else if (distance > warning_dist) {
             /* Far away — green, buzzer off */
             led_rgb_set(0, 255, 0);
@@ -129,7 +129,7 @@ void vTaskAlert(void *params) {
             /* Approaching — orange, slow beep (~2 Hz) */
             led_rgb_set(255, 60, 0);
             if (!muted && (tick_count % 10) < 5) {
-                buzzer_on(1000);
+                buzzer_on(1000, 8); /* lower duty = quieter at low frequency */
             } else {
                 buzzer_off();
             }
@@ -137,7 +137,7 @@ void vTaskAlert(void *params) {
             /* Too close — red, fast beep (~10 Hz) */
             led_rgb_set(255, 0, 0);
             if (!muted && (tick_count % 2)) {
-                buzzer_on(3000);
+                buzzer_on(3000, 4);
             } else {
                 buzzer_off();
             }

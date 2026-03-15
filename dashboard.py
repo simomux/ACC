@@ -197,19 +197,82 @@ scat_brake   = ax_lux.scatter([], [], color='#ff4757', s=40, zorder=5, label='br
 ax_lux.legend(loc='upper right', fontsize=8,
               facecolor='#1a1a2e', edgecolor='#4a4a8a', labelcolor='#e0e0e0')
 
-# stats panel
-stats_text = ax_stats.text(
-    0.05, 0.97, '', transform=ax_stats.transAxes,
-    va='top', ha='left', fontsize=9.5,
-    fontfamily='monospace', color='#e0e0e0',
-    linespacing=1.8,
+# ── stats panel — one text object per row, exact y coordinates ────────────────
+# This avoids all multi-line alignment issues: each label/value is independent,
+# and the alert level colour is set directly on its own text + patch objects.
+
+_LC = '#8888cc'   # label colour
+_VC = '#e0e0e0'   # value colour
+_HC = '#a0a0ff'   # section header colour
+_FS = 9.0         # row font size
+_FH = 8.5         # header font size
+
+
+def _lbl(y, text, color=_LC, size=_FS, bold=False):
+    return ax_stats.text(0.04, y, text, transform=ax_stats.transAxes,
+                         va='top', ha='left', fontsize=size, color=color,
+                         fontweight='bold' if bold else 'normal')
+
+
+def _val(y):
+    return ax_stats.text(0.96, y, '', transform=ax_stats.transAxes,
+                         va='top', ha='right', fontsize=_FS, color=_VC,
+                         fontweight='bold', fontfamily='monospace')
+
+
+def _sep(y):
+    ax_stats.axhline(y, xmin=0.04, xmax=0.96, color='#3a3a6a', lw=0.8)
+
+
+# Live Values
+_lbl(0.97, 'LIVE VALUES', color=_HC, size=_FH, bold=True)
+tv_dist  = _val(0.91); _lbl(0.91, 'Distance')
+tv_raw   = _val(0.86); _lbl(0.86, 'Raw')
+tv_thr   = _val(0.81); _lbl(0.81, 'Threshold')
+tv_lux   = _val(0.76); _lbl(0.76, 'Lux')
+tv_brake = _val(0.71); _lbl(0.71, 'Brake')
+
+# Filter Stats
+_sep(0.665)
+_lbl(0.655, 'FILTER STATS', color=_HC, size=_FH, bold=True)
+tv_out       = _val(0.595); _lbl(0.595, 'Outliers rejected')
+tv_noise_pct = _val(0.545); _lbl(0.545, 'Noise reduction')
+tv_noise_bar = ax_stats.text(0.04, 0.505, '', transform=ax_stats.transAxes,
+                              va='top', ha='left', fontsize=_FS,
+                              color='#4ecdc4', fontfamily='monospace')
+
+# Brake Detection
+_sep(0.46)
+_lbl(0.45, 'BRAKE DETECTION', color=_HC, size=_FH, bold=True)
+tv_events = _val(0.39); _lbl(0.39, 'Events detected')
+tv_fpos   = _val(0.34); _lbl(0.34, 'False positives')
+
+# Alert Level
+_sep(0.295)
+_lbl(0.285, 'ALERT LEVEL', color=_HC, size=_FH, bold=True)
+alert_patch = mpatches.FancyBboxPatch(
+    (0.04, 0.155), 0.92, 0.115,
+    boxstyle='round,pad=0.02', transform=ax_stats.transAxes,
+    facecolor='#2ecc71', edgecolor='none', zorder=3, clip_on=False,
 )
+ax_stats.add_patch(alert_patch)
+alert_text = ax_stats.text(
+    0.5, 0.2125, 'SAFE', transform=ax_stats.transAxes,
+    va='center', ha='center', fontsize=11, fontweight='bold',
+    color='white', zorder=4,
+)
+
+# Samples
+_sep(0.105)
+tv_samples = _val(0.09); _lbl(0.09, 'Samples received')
 
 x_data = list(range(WINDOW_SAMPLES))
 
 
-def _alert_level(dist, thr):
+def _alert_level(dist, thr, brake):
     """Return (label, colour) for the current alert state."""
+    if brake:
+        return 'CRITICAL',     '#e74c3c'
     if dist > thr * 1.3 + 20:
         return 'SAFE',         '#2ecc71'
     if dist > thr:
@@ -270,56 +333,31 @@ def animate(_frame):
     ax_lux.set_ylim(0, lux_max)
 
     # ── stats panel ───────────────────────────────────────────────────────
-    level, level_color = _alert_level(s['dist'], s['thr'])
+    level, level_color = _alert_level(s['dist'], s['thr'], s['brake'])
     noise_pct = _noise_reduction(s)
 
-    bar_len  = 14
-    filled   = int(noise_pct / 100 * bar_len)
-    bar      = '█' * filled + '░' * (bar_len - filled)
+    tv_dist.set_text(f"{s['dist']:.1f} cm")
+    tv_raw.set_text(f"{s['dist_raw']:.1f} cm")
+    tv_thr.set_text(f"{s['thr']:.1f} cm")
+    tv_lux.set_text(f"{s['lux']:.0f} lx")
+    tv_brake.set_text('YES ●' if s['brake'] else 'no')
+    tv_brake.set_color('#ff4757' if s['brake'] else _VC)
 
-    txt = (
-        f"┌─ Live Values ──────────────┐\n"
-        f"│ Distance  {s['dist']:>7.1f} cm       │\n"
-        f"│ Raw       {s['dist_raw']:>7.1f} cm       │\n"
-        f"│ Threshold {s['thr']:>7.1f} cm       │\n"
-        f"│ Lux       {s['lux']:>7.0f} lx       │\n"
-        f"│ Brake     {'  YES ●' if s['brake'] else '   no  '}         │\n"
-        f"└────────────────────────────┘\n"
-        f"\n"
-        f"┌─ Filter Stats ─────────────┐\n"
-        f"│ Outliers rejected  {s['outliers']:>5d}   │\n"
-        f"│ Noise reduction          │\n"
-        f"│  [{bar}]  │\n"
-        f"│  {noise_pct:>5.1f} %                  │\n"
-        f"└────────────────────────────┘\n"
-        f"\n"
-        f"┌─ Brake Detection ──────────┐\n"
-        f"│ Events detected    {s['brake_events']:>5d}   │\n"
-        f"│ False positives    {s['false_pos']:>5d}   │\n"
-        f"└────────────────────────────┘\n"
-        f"\n"
-        f"┌─ Alert Level ──────────────┐\n"
-        f"│  {level:<27}│\n"
-        f"└────────────────────────────┘\n"
-        f"\n"
-        f" Samples received: {s['samples']:>6d}"
-    )
+    tv_out.set_text(str(s['outliers']))
+    bar_len = 14
+    filled  = int(noise_pct / 100 * bar_len)
+    tv_noise_bar.set_text('█' * filled + '░' * (bar_len - filled))
+    tv_noise_pct.set_text(f"{noise_pct:.1f} %")
 
-    stats_text.set_text(txt)
-    stats_text.set_color('#e0e0e0')
+    tv_events.set_text(str(s['brake_events']))
+    tv_fpos.set_text(str(s['false_pos']))
 
-    # colour the alert level line
-    lines = txt.split('\n')
-    # re-draw just the level label in colour — easier via a second text object
-    # (we use a simple overlay approach)
-    ax_stats.texts[1].remove() if len(ax_stats.texts) > 1 else None
-    level_y = 0.97 - (txt[:txt.find(level)].count('\n')) * 0.038
-    ax_stats.text(0.09, level_y, level,
-                  transform=ax_stats.transAxes,
-                  va='top', ha='left', fontsize=9.5,
-                  fontfamily='monospace', color=level_color, fontweight='bold')
+    alert_patch.set_facecolor(level_color)
+    alert_text.set_text(level)
 
-    return line_raw, line_filtered, line_thr, line_lux, scat_brake, stats_text
+    tv_samples.set_text(str(s['samples']))
+
+    return line_raw, line_filtered, line_thr, line_lux, scat_brake, alert_text
 
 
 if __name__ == '__main__':
