@@ -1,4 +1,4 @@
-# start_acc.ps1 -- right-click -> "Run with PowerShell"
+# start_acc.ps1 -- launched by start_acc.bat (or right-click -> "Run with PowerShell")
 
 # Self-elevate if not already admin
 $isAdmin = ([Security.Principal.WindowsPrincipal][Security.Principal.WindowsIdentity]::GetCurrent()).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
@@ -7,15 +7,32 @@ if (-NOT $isAdmin) {
     exit
 }
 
-# Wait for Pico W in a loop
+Write-Host "=== ACC Launcher ===" -ForegroundColor Cyan
+
+# Wait for the Pico W in normal (CDC) mode.
+# If it is detected in BOOTSEL mode ("RP2 Boot") we warn the user and keep waiting.
 $busid = $null
+$bootselWarned = $false
 Write-Host "Waiting for Pico W... plug it in now." -ForegroundColor Yellow
 
 while (-not $busid) {
-    $line = usbipd list 2>$null | Select-String "2e8a"
-    if ($line) {
-        $busid = ($line.ToString().Trim() -split '\s+')[0]
+    $lines = usbipd list 2>$null | Select-String "2e8a"
+    if ($lines) {
+        $bootselLine = $lines | Where-Object { $_ -match "Boot" }
+        $normalLine  = $lines | Where-Object { $_ -notmatch "Boot" }
+
+        if ($normalLine) {
+            $busid = ($normalLine[0].ToString().Trim() -split '\s+')[0]
+        } elseif ($bootselLine -and -not $bootselWarned) {
+            Write-Host ""
+            Write-Host "Pico is in BOOTSEL mode -- flash the firmware, then unplug and replug normally." -ForegroundColor Yellow
+            $bootselWarned = $true
+        } else {
+            Start-Sleep -Seconds 1
+            Write-Host "." -NoNewline
+        }
     } else {
+        $bootselWarned = $false
         Start-Sleep -Seconds 1
         Write-Host "." -NoNewline
     }

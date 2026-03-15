@@ -126,16 +126,27 @@ cp build/acc.uf2 /mnt/d/RPI-RP2/   # adjust drive letter as needed
 
 ### Automatic (recommended)
 
-From **Windows Explorer**, right-click `start_acc.ps1` and select **Run with PowerShell**.
+From **Windows Explorer**, double-click `start_acc.bat`.
+
+> Using the `.bat` launcher avoids the PowerShell UNC security prompt that appears when running `.ps1` files directly from the WSL filesystem.
 
 The script will:
 
 1. Self-elevate to Administrator
-2. Wait for the Pico W to be plugged in (polls automatically)
+2. Poll for the Pico W — if it is detected in **BOOTSEL mode** (e.g. while flashing) it prints a warning and keeps waiting; once you unplug and replug normally it continues automatically
 3. Bind and attach the USB device to WSL via usbipd
 4. Open a WSL terminal that starts the micro-ROS agent and the live dashboard
 
-> On first run Windows may ask to allow PowerShell execution. Choose "Allow".
+**Typical workflow when flashing + running in the same session:**
+
+1. Hold **BOOTSEL**, plug in the Pico — `start_acc.bat` detects it and prints:
+
+   ```text
+   Pico is in BOOTSEL mode -- flash the firmware, then unplug and replug normally.
+   ```
+
+2. Copy `build/acc.uf2` to the `RPI-RP2` drive (the Pico reboots automatically)
+3. The script detects the Pico in normal mode and launches the dashboard — no restart needed
 
 ### Manual
 
@@ -189,21 +200,21 @@ Requires only `python3-matplotlib` (installed via apt in step 2).
 ## Architecture
 
 ```text
-┌─────────────────────────── Pico W ──────────────────────────────┐
-│                                                                   │
-│  Core 0                          Core 1                          │
-│  ├─ vTaskSensor  (60ms)          └─ vTaskMicroROS (100ms)        │
-│  │    HC-SR04, median-of-3              │                        │
-│  ├─ vTaskBrake   (100ms)                │ USB serial             │
-│  │    BH1750 lux + brake detect         │ (UART framing)         │
-│  ├─ vTaskDimmer  (200ms)                ▼                        │
-│  │    ADC potentiometer          micro-ROS agent                 │
-│  ├─ vTaskAlert   (100ms)                │                        │
-│  │    RGB LED + buzzer                  │ ROS 2 topics           │
-│  └─ vTaskOled    (500ms)                ▼                        │
-│       SH1106 128x64              dashboard.py                    │
-│                                  (matplotlib)                    │
-└───────────────────────────────────────────────────────────────────┘
+┌─────────────────────────── Pico W ─────────────────────────┐
+│                                                            │
+│  Core 0                          Core 1                    │
+│  ├─ vTaskSensor  (60ms)          └─ vTaskMicroROS (100ms)  │
+│  │    HC-SR04, median-of-3              │                  │
+│  ├─ vTaskBrake   (100ms)                │ USB serial       │
+│  │    BH1750 lux + brake detect         │ (UART framing)   │
+│  ├─ vTaskDimmer  (200ms)                ▼                  │
+│  │    ADC potentiometer          micro-ROS agent           │
+│  ├─ vTaskAlert   (100ms)                │                  │
+│  │    RGB LED + buzzer                  │ ROS 2 topics     │
+│  └─ vTaskOled    (500ms)                ▼                  │
+│       SH1106 128x64              dashboard.py              │
+│                                  (matplotlib)              │
+└────────────────────────────────────────────────────────────┘
 ```
 
 ## ROS 2 topics
