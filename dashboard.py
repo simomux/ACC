@@ -4,9 +4,10 @@ ACC Telemetry Dashboard
 =======================
 Subscribes to micro-ROS topics published by the Pico W and shows:
   - Distance: raw (pre-filter) vs median-filtered, with threshold line
+  - Relative velocity (EMA-smoothed derivative of filtered distance)
   - Light sensor: lux over time with brake-event markers
   - Stats panel: outliers rejected, brake events, false positives,
-                 filter noise reduction, alert level
+                 filter noise reduction, relative velocity, TTC, alert level
 
 Requirements:
     pip install matplotlib
@@ -21,6 +22,7 @@ Run:
 """
 
 import threading
+import time
 from collections import deque
 
 import rclpy
@@ -39,6 +41,10 @@ HZ              = 10        # Pico publish rate
 WINDOW_SAMPLES  = WINDOW_S * HZ
 OUTLIER_THRESH  = 5.0       # cm delta between raw and filtered → counts as outlier
 FALSE_POS_MAX_S = 0.4       # brake event shorter than this → false positive
+V_EMA_ALPHA     = 0.15      # EMA smoothing factor for relative velocity (lower = smoother)
+V_NOISE_FLOOR   = 1.0       # cm/s — below this |v| is treated as zero for TTC
+HYST_MARGIN_CM  = 10.0      # cm extra buffer to exit a worse zone (spatial hysteresis)
+HYST_FRAMES     = 3         # consecutive frames needed to confirm a degradation
 # ─────────────────────────────────────────────────────────────────────────────
 
 matplotlib.rcParams.update({
@@ -63,12 +69,13 @@ buf_dist     = deque([0.0] * WINDOW_SAMPLES, maxlen=WINDOW_SAMPLES)
 buf_thr      = deque([50.0] * WINDOW_SAMPLES, maxlen=WINDOW_SAMPLES)
 buf_lux      = deque([0.0] * WINDOW_SAMPLES, maxlen=WINDOW_SAMPLES)
 buf_brake    = deque([False] * WINDOW_SAMPLES, maxlen=WINDOW_SAMPLES)
+buf_vel      = deque([0.0] * WINDOW_SAMPLES, maxlen=WINDOW_SAMPLES)
 
 stats = {
     'outliers':      0,
     'brake_events':  0,
     'false_pos':     0,
-    'last_brake_on': None,   # timestamp of last rising edge
+    'last_brake_on': None,
     'noise_sum':     0.0,
     'noise_count':   0,
     'samples':       0,
@@ -77,6 +84,8 @@ stats = {
     'thr':           50.0,
     'lux':           0.0,
     'brake':         False,
+    'v_rel':         0.0,   # EMA-smoothed relative velocity (cm/s, negative = approaching)
+    'ttc':           float('inf'),  # Time To Collision (s)
 }
 
 # ── ROS 2 node ────────────────────────────────────────────────────────────────
@@ -93,19 +102,37 @@ class AccSubscriber(Node):
         self.create_subscription(Float32, 'acc/threshold',    self._cb_thr,      qos)
         self.create_subscription(Float32, 'acc/lux',          self._cb_lux,      qos)
         self.create_subscription(Bool,    'acc/brake',        self._cb_brake,    qos)
+        self._prev_dist = None
+        self._prev_time = None
 
     def _cb_dist(self, msg):
         with lock:
             buf_dist.append(msg.data)
             stats['dist'] = msg.data
+
             # outlier detection vs latest raw
             delta = abs(stats['dist_raw'] - msg.data)
             if delta > OUTLIER_THRESH:
                 stats['outliers'] += 1
-            # noise accumulator
             stats['noise_sum']   += delta
             stats['noise_count'] += 1
             stats['samples']     += 1
+
+            # ── relative velocity (EMA of discrete derivative) ────────────
+            now = time.monotonic()
+            if self._prev_dist is not None:
+                dt = now - self._prev_time
+                if dt >= 0.01:   # guard against duplicate/fast callbacks
+                    v_raw = (msg.data - self._prev_dist) / dt   # cm/s
+                    stats['v_rel'] = (V_EMA_ALPHA * v_raw
+                                      + (1.0 - V_EMA_ALPHA) * stats['v_rel'])
+            self._prev_dist = msg.data
+            self._prev_time = now
+            buf_vel.append(stats['v_rel'])
+
+            # ── TTC: meaningful only when approaching (v_rel < -noise_floor)
+            v = stats['v_rel']
+            stats['ttc'] = (-msg.data / v) if v < -V_NOISE_FLOOR else float('inf')
 
     def _cb_dist_raw(self, msg):
         with lock:
@@ -130,12 +157,10 @@ class AccSubscriber(Node):
             now = self.get_clock().now().nanoseconds * 1e-9
 
             if msg.data and not prev:
-                # rising edge → new brake event
                 stats['brake_events'] += 1
                 stats['last_brake_on'] = now
 
             if not msg.data and prev and stats['last_brake_on'] is not None:
-                # falling edge → check duration
                 duration = now - stats['last_brake_on']
                 if duration < FALSE_POS_MAX_S:
                     stats['false_pos'] += 1
@@ -169,8 +194,9 @@ for ax in (ax_dist, ax_lux):
 
 ax_stats.axis('off')
 
-# distance plot
-ax_dist.set_title('Distance  —  raw vs median-filtered', color='#c0c0ff', fontsize=10)
+# distance plot (primary axis — cm)
+ax_dist.set_title('Distance  —  raw vs filtered  |  relative velocity',
+                   color='#c0c0ff', fontsize=10)
 ax_dist.set_ylabel('cm')
 ax_dist.set_xlim(0, WINDOW_SAMPLES)
 ax_dist.set_ylim(0, 250)
@@ -178,7 +204,17 @@ ax_dist.set_ylim(0, 250)
 line_raw,      = ax_dist.plot([], [], color='#ff6b6b', alpha=0.55, lw=1.2, label='raw')
 line_filtered, = ax_dist.plot([], [], color='#4ecdc4', lw=2.0,    label='filtered')
 line_thr,      = ax_dist.plot([], [], color='#ffe66d', lw=1.5, ls='--', label='threshold')
-ax_dist.legend(loc='upper right', fontsize=8,
+
+# velocity secondary axis (cm/s) — shares x with ax_dist
+ax_vel = ax_dist.twinx()
+ax_vel.set_ylabel('cm/s', color='#c39bd3', fontsize=8)
+ax_vel.tick_params(axis='y', colors='#c39bd3', labelsize=7)
+ax_vel.spines['right'].set_color('#4a4a8a')
+line_vel, = ax_vel.plot([], [], color='#c39bd3', lw=1.2, ls=':', alpha=0.85, label='vel.')
+
+# combined legend
+handles = [line_raw, line_filtered, line_thr, line_vel]
+ax_dist.legend(handles=handles, loc='upper right', fontsize=8,
                facecolor='#1a1a2e', edgecolor='#4a4a8a', labelcolor='#e0e0e0')
 
 # zone fill (redrawn each frame)
@@ -189,22 +225,19 @@ fill_warn   = None
 ax_lux.set_title('Light Sensor  —  lux  (● brake events)', color='#c0c0ff', fontsize=10)
 ax_lux.set_ylabel('lux')
 ax_lux.set_xlim(0, WINDOW_SAMPLES)
-ax_lux.set_ylim(0, 1)      # auto-scaled each frame
+ax_lux.set_ylim(0, 1)
 
-line_lux,    = ax_lux.plot([], [], color='#ffd93d', lw=1.8, label='lux')
-scat_brake   = ax_lux.scatter([], [], color='#ff4757', s=40, zorder=5, label='brake')
+line_lux,  = ax_lux.plot([], [], color='#ffd93d', lw=1.8, label='lux')
+scat_brake = ax_lux.scatter([], [], color='#ff4757', s=40, zorder=5, label='brake')
 ax_lux.legend(loc='upper right', fontsize=8,
               facecolor='#1a1a2e', edgecolor='#4a4a8a', labelcolor='#e0e0e0')
 
 # ── stats panel — one text object per row, exact y coordinates ────────────────
-# This avoids all multi-line alignment issues: each label/value is independent,
-# and the alert level colour is set directly on its own text + patch objects.
-
 _LC = '#8888cc'   # label colour
 _VC = '#e0e0e0'   # value colour
 _HC = '#a0a0ff'   # section header colour
-_FS = 9.0         # row font size
-_FH = 8.5         # header font size
+_FS = 9.0
+_FH = 8.5
 
 
 def _lbl(y, text, color=_LC, size=_FS, bold=False):
@@ -223,67 +256,125 @@ def _sep(y):
     ax_stats.axhline(y, xmin=0.04, xmax=0.96, color='#3a3a6a', lw=0.8)
 
 
-# Live Values
+# Live Values (compact 0.045 spacing to fit 7 rows)
 _lbl(0.97, 'LIVE VALUES', color=_HC, size=_FH, bold=True)
-tv_dist  = _val(0.91); _lbl(0.91, 'Distance')
-tv_raw   = _val(0.86); _lbl(0.86, 'Raw')
-tv_thr   = _val(0.81); _lbl(0.81, 'Threshold')
-tv_lux   = _val(0.76); _lbl(0.76, 'Lux')
-tv_brake = _val(0.71); _lbl(0.71, 'Brake')
+tv_dist  = _val(0.915); _lbl(0.915, 'Distance')
+tv_raw   = _val(0.870); _lbl(0.870, 'Raw')
+tv_thr   = _val(0.825); _lbl(0.825, 'Threshold')
+tv_lux   = _val(0.780); _lbl(0.780, 'Lux')
+tv_brake = _val(0.735); _lbl(0.735, 'Brake')
+tv_vrel  = _val(0.690); _lbl(0.690, 'Vel. relative')
+tv_ttc   = _val(0.645); _lbl(0.645, 'TTC')
 
 # Filter Stats
-_sep(0.665)
-_lbl(0.655, 'FILTER STATS', color=_HC, size=_FH, bold=True)
-tv_out       = _val(0.595); _lbl(0.595, 'Outliers rejected')
-tv_noise_pct = _val(0.545); _lbl(0.545, 'Noise reduction')
-tv_noise_bar = ax_stats.text(0.04, 0.505, '', transform=ax_stats.transAxes,
+_sep(0.610)
+_lbl(0.600, 'FILTER STATS', color=_HC, size=_FH, bold=True)
+tv_out       = _val(0.545); _lbl(0.545, 'Outliers rejected')
+tv_noise_pct = _val(0.500); _lbl(0.500, 'Noise reduction')
+tv_noise_bar = ax_stats.text(0.04, 0.460, '', transform=ax_stats.transAxes,
                               va='top', ha='left', fontsize=_FS,
                               color='#4ecdc4', fontfamily='monospace')
 
 # Brake Detection
-_sep(0.46)
-_lbl(0.45, 'BRAKE DETECTION', color=_HC, size=_FH, bold=True)
-tv_events = _val(0.39); _lbl(0.39, 'Events detected')
-tv_fpos   = _val(0.34); _lbl(0.34, 'False positives')
+_sep(0.420)
+_lbl(0.410, 'BRAKE DETECTION', color=_HC, size=_FH, bold=True)
+tv_events = _val(0.355); _lbl(0.355, 'Events detected')
+tv_fpos   = _val(0.310); _lbl(0.310, 'False positives')
 
 # Alert Level
-_sep(0.295)
-_lbl(0.285, 'ALERT LEVEL', color=_HC, size=_FH, bold=True)
+_sep(0.270)
+_lbl(0.260, 'ALERT LEVEL', color=_HC, size=_FH, bold=True)
 alert_patch = mpatches.FancyBboxPatch(
-    (0.04, 0.155), 0.92, 0.115,
+    (0.04, 0.130), 0.92, 0.115,
     boxstyle='round,pad=0.02', transform=ax_stats.transAxes,
     facecolor='#2ecc71', edgecolor='none', zorder=3, clip_on=False,
 )
 ax_stats.add_patch(alert_patch)
 alert_text = ax_stats.text(
-    0.5, 0.2125, 'SAFE', transform=ax_stats.transAxes,
+    0.5, 0.1875, 'SAFE', transform=ax_stats.transAxes,
     va='center', ha='center', fontsize=11, fontweight='bold',
     color='white', zorder=4,
 )
 
 # Samples
-_sep(0.105)
-tv_samples = _val(0.09); _lbl(0.09, 'Samples received')
+_sep(0.085)
+tv_samples = _val(0.070); _lbl(0.070, 'Samples received')
 
 x_data = list(range(WINDOW_SAMPLES))
 
 
+_LEVEL_COLORS = {'SAFE': '#2ecc71', 'APPROACHING': '#f39c12', 'CRITICAL': '#e74c3c'}
+_LEVEL_RANK   = {'SAFE': 0, 'APPROACHING': 1, 'CRITICAL': 2}
+_alert_state   = 'SAFE'
+_worse_counter = 0
+
+
 def _alert_level(dist, thr, brake):
-    """Return (label, colour) for the current alert state."""
+    """Stateful alert level with spatial hysteresis + temporal debounce.
+
+    Degradation (SAFE→APPROACHING→CRITICAL) requires HYST_FRAMES consecutive
+    frames inside the worse zone before committing.  Improvement is immediate
+    but needs the distance to clear the entry threshold by HYST_MARGIN_CM
+    (asymmetric thresholds prevent oscillation at zone boundaries).
+    Brake always forces CRITICAL instantly regardless of distance.
+    """
+    global _alert_state, _worse_counter
+
     if brake:
-        return 'CRITICAL',     '#e74c3c'
-    if dist > thr * 1.3 + 20:
-        return 'SAFE',         '#2ecc71'
-    if dist > thr:
-        return 'APPROACHING',  '#f39c12'
-    return     'CRITICAL',     '#e74c3c'
+        _alert_state = 'CRITICAL'
+        _worse_counter = 0
+        return _alert_state, _LEVEL_COLORS[_alert_state]
+
+    # Entry thresholds (to get worse) — same as before
+    entry_approaching = thr * 1.3 + 20   # dist drops below → APPROACHING
+    entry_critical    = thr              # dist drops below → CRITICAL
+
+    # Exit thresholds (to get better) — entry + hysteresis margin
+    exit_approaching  = entry_approaching + HYST_MARGIN_CM
+    exit_critical     = entry_critical    + HYST_MARGIN_CM
+
+    # Determine target zone based on current state and asymmetric thresholds
+    if _alert_state == 'SAFE':
+        target = 'APPROACHING' if dist <= entry_approaching else 'SAFE'
+
+    elif _alert_state == 'APPROACHING':
+        if dist <= entry_critical:
+            target = 'CRITICAL'
+        elif dist > exit_approaching:
+            target = 'SAFE'
+        else:
+            target = 'APPROACHING'
+
+    else:  # CRITICAL
+        target = 'APPROACHING' if dist > exit_critical else 'CRITICAL'
+
+    # Temporal debounce: only apply delay when degrading
+    if _LEVEL_RANK[target] > _LEVEL_RANK[_alert_state]:
+        _worse_counter += 1
+        if _worse_counter < HYST_FRAMES:
+            return _alert_state, _LEVEL_COLORS[_alert_state]  # hold current
+        _alert_state   = target
+        _worse_counter = 0
+    else:
+        _alert_state   = target   # improvements are immediate
+        _worse_counter = 0
+
+    return _alert_state, _LEVEL_COLORS[_alert_state]
+
+
+def _ttc_color(ttc):
+    """Colour-code TTC: green > 3 s, orange 1–3 s, red < 1 s."""
+    if ttc == float('inf') or ttc > 3.0:
+        return '#2ecc71'
+    if ttc > 1.0:
+        return '#f39c12'
+    return '#e74c3c'
 
 
 def _noise_reduction(s):
     if s['noise_count'] == 0 or s['dist_raw'] == 0:
         return 0.0
     avg_noise = s['noise_sum'] / s['noise_count']
-    # express as % of the average raw value (rough estimate)
     return min(avg_noise / max(s['dist_raw'], 1.0) * 100.0, 99.9)
 
 
@@ -296,6 +387,7 @@ def animate(_frame):
         d_thr  = list(buf_thr)
         d_lux  = list(buf_lux)
         d_brk  = list(buf_brake)
+        d_vel  = list(buf_vel)
         s      = dict(stats)
 
     # ── distance plot ─────────────────────────────────────────────────────
@@ -303,7 +395,6 @@ def animate(_frame):
     line_filtered.set_data(x_data, d_filt)
     line_thr.set_data(x_data, d_thr)
 
-    # coloured zone between filtered line and threshold
     if fill_danger:
         fill_danger.remove()
     if fill_warn:
@@ -319,6 +410,13 @@ def animate(_frame):
                                        color='#f39c12', alpha=0.10)
 
     ax_dist.set_ylim(0, max(max(d_raw + [0]) * 1.15, thr_val * 1.5, 60))
+
+    # ── velocity secondary axis ────────────────────────────────────────────
+    line_vel.set_data(x_data, d_vel)
+    vel_abs_max = max(max(abs(v) for v in d_vel), 10.0)
+    ax_vel.set_ylim(-vel_abs_max * 1.2, vel_abs_max * 1.2)
+    # zero reference line (drawn once would persist; use axhline on ax_vel)
+    ax_vel.axhline(0, color='#c39bd3', lw=0.4, alpha=0.4)
 
     # ── lux plot ──────────────────────────────────────────────────────────
     line_lux.set_data(x_data, d_lux)
@@ -342,6 +440,16 @@ def animate(_frame):
     tv_brake.set_text('YES ●' if s['brake'] else 'no')
     tv_brake.set_color('#ff4757' if s['brake'] else _VC)
 
+    # relative velocity: green = moving away, red = approaching
+    v = s['v_rel']
+    tv_vrel.set_text(f"{v:+.1f} cm/s")
+    tv_vrel.set_color('#2ecc71' if v >= 0 else '#e74c3c')
+
+    # TTC
+    ttc = s['ttc']
+    tv_ttc.set_text(f"{ttc:.1f} s" if ttc != float('inf') else '∞')
+    tv_ttc.set_color(_ttc_color(ttc))
+
     tv_out.set_text(str(s['outliers']))
     bar_len = 14
     filled  = int(noise_pct / 100 * bar_len)
@@ -356,7 +464,7 @@ def animate(_frame):
 
     tv_samples.set_text(str(s['samples']))
 
-    return line_raw, line_filtered, line_thr, line_lux, scat_brake, alert_text
+    return line_raw, line_filtered, line_thr, line_vel, line_lux, scat_brake, alert_text
 
 
 if __name__ == '__main__':
