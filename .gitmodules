@@ -4,3 +4,6 @@
 [submodule "3rdparty/u8g2"]
 	path = 3rdparty/u8g2
 	url = https://github.com/olikraus/u8g2.git
+[submodule "micro_ros_raspberrypi_pico_sdk"]
+	path = micro_ros_raspberrypi_pico_sdk
+	url = https://github.com/micro-ROS/micro_ros_raspberrypi_pico_sdk
