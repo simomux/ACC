@@ -53,9 +53,10 @@
 
 
 /* Shared queues (mailbox style, depth 1) */
-extern QueueHandle_t xQueueDistance;   /* float, cm */
-extern QueueHandle_t xQueueThreshold;  /* float, cm */
-extern QueueHandle_t xQueueBrake;      /* bool, brake detected */
-extern QueueHandle_t xQueueLux;       /* float, ambient light in lux */
+extern QueueHandle_t xQueueDistance;      /* float, cm — median-filtered */
+extern QueueHandle_t xQueueDistanceRaw;   /* float, cm — first raw sample (pre-filter) */
+extern QueueHandle_t xQueueThreshold;     /* float, cm */
+extern QueueHandle_t xQueueBrake;         /* bool, brake detected */
+extern QueueHandle_t xQueueLux;           /* float, ambient light in lux */
 
 #endif

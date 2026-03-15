@@ -19,6 +19,7 @@
 
 /* Shared mailbox queues defined in main.c */
 extern QueueHandle_t xQueueDistance;
+extern QueueHandle_t xQueueDistanceRaw;
 extern QueueHandle_t xQueueThreshold;
 extern QueueHandle_t xQueueBrake;
 extern QueueHandle_t xQueueLux;
@@ -76,6 +77,7 @@ static size_t usb_transport_read(struct uxrCustomTransport *t,
 static bool microros_init(rcl_node_t      *node,
                            rclc_support_t  *support,
                            rcl_publisher_t *pub_dist,
+                           rcl_publisher_t *pub_dist_raw,
                            rcl_publisher_t *pub_thr,
                            rcl_publisher_t *pub_lux,
                            rcl_publisher_t *pub_brake,
@@ -86,6 +88,8 @@ static bool microros_init(rcl_node_t      *node,
 
     RCCHECK(rclc_publisher_init_best_effort(pub_dist, node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "acc/distance"));
+    RCCHECK(rclc_publisher_init_best_effort(pub_dist_raw, node,
+        ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "acc/distance_raw"));
     RCCHECK(rclc_publisher_init_best_effort(pub_thr, node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "acc/threshold"));
     RCCHECK(rclc_publisher_init_best_effort(pub_lux, node,
@@ -99,16 +103,18 @@ static bool microros_init(rcl_node_t      *node,
 static void microros_fini(rcl_node_t      *node,
                            rclc_support_t  *support,
                            rcl_publisher_t *pub_dist,
+                           rcl_publisher_t *pub_dist_raw,
                            rcl_publisher_t *pub_thr,
                            rcl_publisher_t *pub_lux,
                            rcl_publisher_t *pub_brake)
 {
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-result"
-    rcl_publisher_fini(pub_dist,  node);
-    rcl_publisher_fini(pub_thr,   node);
-    rcl_publisher_fini(pub_lux,   node);
-    rcl_publisher_fini(pub_brake, node);
+    rcl_publisher_fini(pub_dist,     node);
+    rcl_publisher_fini(pub_dist_raw, node);
+    rcl_publisher_fini(pub_thr,      node);
+    rcl_publisher_fini(pub_lux,      node);
+    rcl_publisher_fini(pub_brake,    node);
     rcl_node_fini(node);
     rclc_support_fini(support);
 #pragma GCC diagnostic pop
@@ -130,9 +136,9 @@ void vTaskMicroROS(void *pvParameters)
     rcl_allocator_t allocator = rcl_get_default_allocator();
     rclc_support_t  support;
     rcl_node_t      node;
-    rcl_publisher_t pub_dist, pub_thr, pub_lux, pub_brake;
+    rcl_publisher_t pub_dist, pub_dist_raw, pub_thr, pub_lux, pub_brake;
 
-    std_msgs__msg__Float32 msg_dist, msg_thr, msg_lux;
+    std_msgs__msg__Float32 msg_dist, msg_dist_raw, msg_thr, msg_lux;
     std_msgs__msg__Bool    msg_brake;
 
     bool connected = false;
@@ -142,7 +148,8 @@ void vTaskMicroROS(void *pvParameters)
         if (!connected) {
             if (rmw_uros_ping_agent(1000, 1) == RMW_RET_OK) {
                 if (microros_init(&node, &support,
-                                  &pub_dist, &pub_thr, &pub_lux, &pub_brake,
+                                  &pub_dist, &pub_dist_raw,
+                                  &pub_thr, &pub_lux, &pub_brake,
                                   &allocator)) {
                     connected = true;
                     xLastPublish = xTaskGetTickCount();
@@ -152,27 +159,32 @@ void vTaskMicroROS(void *pvParameters)
             continue;
         }
 
-        float dist = 0.0f, thr = 0.0f, lux = 0.0f;
+        float dist = 0.0f, dist_raw = 0.0f, thr = 0.0f, lux = 0.0f;
         bool  brake = false;
 
-        xQueuePeek(xQueueDistance,  &dist,  0);
-        xQueuePeek(xQueueThreshold, &thr,   0);
-        xQueuePeek(xQueueLux,       &lux,   0);
-        xQueuePeek(xQueueBrake,     &brake, 0);
+        xQueuePeek(xQueueDistance,    &dist,     0);
+        xQueuePeek(xQueueDistanceRaw, &dist_raw, 0);
+        xQueuePeek(xQueueThreshold,   &thr,      0);
+        xQueuePeek(xQueueLux,         &lux,      0);
+        xQueuePeek(xQueueBrake,       &brake,    0);
 
-        msg_dist.data  = dist;
-        msg_thr.data   = thr;
-        msg_lux.data   = lux;
-        msg_brake.data = brake;
+        msg_dist.data     = dist;
+        msg_dist_raw.data = dist_raw;
+        msg_thr.data      = thr;
+        msg_lux.data      = lux;
+        msg_brake.data    = brake;
 
         bool ok = true;
-        if (rcl_publish(&pub_dist,  &msg_dist,  NULL) != RCL_RET_OK) ok = false;
-        if (rcl_publish(&pub_thr,   &msg_thr,   NULL) != RCL_RET_OK) ok = false;
-        if (rcl_publish(&pub_lux,   &msg_lux,   NULL) != RCL_RET_OK) ok = false;
-        if (rcl_publish(&pub_brake, &msg_brake, NULL) != RCL_RET_OK) ok = false;
+        if (rcl_publish(&pub_dist,     &msg_dist,     NULL) != RCL_RET_OK) ok = false;
+        if (rcl_publish(&pub_dist_raw, &msg_dist_raw, NULL) != RCL_RET_OK) ok = false;
+        if (rcl_publish(&pub_thr,      &msg_thr,      NULL) != RCL_RET_OK) ok = false;
+        if (rcl_publish(&pub_lux,      &msg_lux,      NULL) != RCL_RET_OK) ok = false;
+        if (rcl_publish(&pub_brake,    &msg_brake,    NULL) != RCL_RET_OK) ok = false;
 
         if (!ok) {
-            microros_fini(&node, &support, &pub_dist, &pub_thr, &pub_lux, &pub_brake);
+            microros_fini(&node, &support,
+                          &pub_dist, &pub_dist_raw,
+                          &pub_thr, &pub_lux, &pub_brake);
             connected = false;
             continue;
         }

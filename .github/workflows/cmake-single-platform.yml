@@ -1,6 +1,4 @@
-# This starter workflow is for a CMake project running on a single platform. There is a different starter workflow if you need cross-platform coverage.
-# See: https://github.com/actions/starter-workflows/blob/main/ci/cmake-multi-platform.yml
-name: CMake on a single platform
+name: Build Pico W firmware
 
 on:
   push:
@@ -8,6 +6,8 @@ on:
     paths:
       - 'apps/**'
       - 'FreeRTOS-Kernel/**'
+      - 'micro_ros_raspberrypi_pico_sdk/**'
+      - '3rdparty/**'
       - 'CMakeLists.txt'
       - 'FreeRTOS_Kernel_import.cmake'
       - 'FreeRTOSConfig.h'
@@ -17,6 +17,8 @@ on:
     paths:
       - 'apps/**'
       - 'FreeRTOS-Kernel/**'
+      - 'micro_ros_raspberrypi_pico_sdk/**'
+      - '3rdparty/**'
       - 'CMakeLists.txt'
       - 'FreeRTOS_Kernel_import.cmake'
       - 'FreeRTOSConfig.h'
@@ -24,9 +26,6 @@ on:
 
 jobs:
   build:
-    # The CMake configure and build commands are platform agnostic and should work equally well on Windows or Mac.
-    # You can convert this to a matrix build if you need cross-platform coverage.
-    # See: https://docs.github.com/en/free-pro-team@latest/actions/learn-github-actions/managing-complex-workflows#using-a-build-matrix
     runs-on: ubuntu-latest
 
     env:
@@ -34,32 +33,55 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v4.2.2
         with:
           submodules: recursive
 
       - name: Install ARM toolchain & dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake gcc-arm-none-eabi libnewlib-arm-none-eabi libstdc++-arm-none-eabi-newlib build-essential
+          sudo apt-get install -y \
+            cmake \
+            gcc-arm-none-eabi \
+            libnewlib-arm-none-eabi \
+            libstdc++-arm-none-eabi-newlib \
+            build-essential \
+            python3
 
-      # Cache the Pico SDK to speed up build.
+      # Cache the Pico SDK (changes rarely)
       - name: Cache Pico SDK
         id: cache-sdk
-        uses: actions/cache@v4
+        uses: actions/cache@v4.2.3
         with:
           path: ${{ env.PICO_SDK_PATH }}
           key: pico-sdk-${{ hashFiles('.github/workflows/cmake-single-platform.yml') }}
 
-      # Clone only specific submodules to reduce clone time and cache size.
       - name: Clone Pico SDK
         if: steps.cache-sdk.outputs.cache-hit != 'true'
         run: |
           git clone --depth 1 https://github.com/raspberrypi/pico-sdk.git "$PICO_SDK_PATH"
-          cd "$PICO_SDK_PATH" && git submodule update --init --depth 1 lib/tinyusb lib/cyw43-driver lib/lwip
+          cd "$PICO_SDK_PATH" && git submodule update --init --depth 1 \
+            lib/tinyusb lib/cyw43-driver lib/lwip
+
+      # Cache large submodules (u8g2 is ~336MB, micro-ROS has a prebuilt .a)
+      - name: Cache submodules
+        uses: actions/cache@v4.2.3
+        with:
+          path: |
+            3rdparty/u8g2
+            micro_ros_raspberrypi_pico_sdk
+          key: submodules-${{ hashFiles('.gitmodules') }}
 
       - name: Configure CMake
         run: cmake -B build -DPICO_BOARD=pico_w
 
       - name: Build
         run: cmake --build build --parallel $(nproc)
+
+      # Upload the .uf2 so it can be downloaded directly from the Actions page
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: acc-firmware
+          path: build/acc.uf2
+          if-no-files-found: error

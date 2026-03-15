@@ -73,6 +73,14 @@ void vTaskSensor(void *params) {
             if (i < 2) vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
         }
 
+        /* Publish first valid raw sample (pre-filter) for dashboard comparison */
+        for (int i = 0; i < 3; i++) {
+            if (samples[i] >= 0.0f) {
+                xQueueOverwrite(xQueueDistanceRaw, &samples[i]);
+                break;
+            }
+        }
+
         if (valid == 3) {
             float distance = median3(samples[0], samples[1], samples[2]);
             xQueueOverwrite(xQueueDistance, &distance);

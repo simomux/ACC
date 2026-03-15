@@ -16,6 +16,7 @@
 
 /* Shared mailbox queues */
 QueueHandle_t xQueueDistance;
+QueueHandle_t xQueueDistanceRaw;
 QueueHandle_t xQueueThreshold;
 QueueHandle_t xQueueBrake;
 QueueHandle_t xQueueLux;
@@ -40,20 +41,22 @@ int main(void) {
     }
 
     /* Create mailbox queues (depth 1) */
-    xQueueDistance  = xQueueCreate(1, sizeof(float));
-    xQueueThreshold = xQueueCreate(1, sizeof(float));
-    xQueueBrake     = xQueueCreate(1, sizeof(bool));
-    xQueueLux       = xQueueCreate(1, sizeof(float));
+    xQueueDistance    = xQueueCreate(1, sizeof(float));
+    xQueueDistanceRaw = xQueueCreate(1, sizeof(float));
+    xQueueThreshold   = xQueueCreate(1, sizeof(float));
+    xQueueBrake       = xQueueCreate(1, sizeof(bool));
+    xQueueLux         = xQueueCreate(1, sizeof(float));
 
     /* Seed initial values */
     float init_dist = 999.0f;
     float init_thr  = 50.0f;
     bool  init_brk  = false;
     float init_lux  = 0.0f;
-    xQueueOverwrite(xQueueDistance,  &init_dist);
-    xQueueOverwrite(xQueueThreshold, &init_thr);
-    xQueueOverwrite(xQueueBrake,     &init_brk);
-    xQueueOverwrite(xQueueLux,       &init_lux);
+    xQueueOverwrite(xQueueDistance,    &init_dist);
+    xQueueOverwrite(xQueueDistanceRaw, &init_dist);
+    xQueueOverwrite(xQueueThreshold,   &init_thr);
+    xQueueOverwrite(xQueueBrake,       &init_brk);
+    xQueueOverwrite(xQueueLux,         &init_lux);
     /* Create tasks */
 
     //xTaskCreate(vTaskI2CManager, "I2C",    4096, NULL, I2C_TASK_PRIORITY,    NULL);
