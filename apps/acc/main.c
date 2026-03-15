@@ -11,6 +11,7 @@
 #include "task_alert.h"
 #include "task_brake.h"
 #include "task_oled.h"
+#include "task_microros.h"
 // #include "i2c_manager.h"
 
 /* Shared mailbox queues */
@@ -27,28 +28,16 @@ QueueHandle_t xQueueLux;
 #define ALERT_TASK_PRIORITY     ( tskIDLE_PRIORITY + 2UL )
 #define DEBUG_TASK_PRIORITY     ( tskIDLE_PRIORITY + 1UL )
 #define OLED_TASK_PRIORITY      ( tskIDLE_PRIORITY + 1UL )
+#define MICROROS_TASK_PRIORITY  ( tskIDLE_PRIORITY + 2UL )
 
 #define TASK_STACK_SIZE         ( configMINIMAL_STACK_SIZE )
 
-void vTaskDebug(void *params) {
-    (void)params;
-    float distance = 0.0f;
-    float threshold = 0.0f;
-    for (;;) {
-        xQueuePeek(xQueueDistance,  &distance,  0);
-        xQueuePeek(xQueueThreshold, &threshold, 0);
-        printf("dist=%.1f cm  thr=%.1f cm\n", distance, threshold);
-        vTaskDelay(pdMS_TO_TICKS(500));
-    }
-}
-
 int main(void) {
     stdio_init_all();
-    /* Wait until USB serial is connected (or timeout after 10s) */
+    /* Wait until USB serial is connected before starting micro-ROS transport */
     for (int i = 0; i < 100 && !stdio_usb_connected(); i++) {
         sleep_ms(100);
     }
-    printf("Starting ACC...\n");
 
     /* Create mailbox queues (depth 1) */
     xQueueDistance  = xQueueCreate(1, sizeof(float));
@@ -72,8 +61,11 @@ int main(void) {
     xTaskCreate(vTaskBrake,      "Brake",  512, NULL, BRAKE_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDimmer,     "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskAlert,      "Alert",  TASK_STACK_SIZE, NULL, ALERT_TASK_PRIORITY,  NULL);
-    xTaskCreate(vTaskDebug,      "Debug",  TASK_STACK_SIZE, NULL, DEBUG_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskOled,       "OLED",   4096,            NULL, OLED_TASK_PRIORITY,   NULL);
+
+    /* micro-ROS task pinned to Core 1 (affinity mask 0x02) */
+    xTaskCreateAffinitySet(vTaskMicroROS, "MicroROS", 4096, NULL,
+                           MICROROS_TASK_PRIORITY, (1 << 1), NULL);
 
     vTaskStartScheduler();
     return 0;

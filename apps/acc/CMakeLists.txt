@@ -1,4 +1,14 @@
+set(MICROROS_SDK ${CMAKE_SOURCE_DIR}/micro_ros_raspberrypi_pico_sdk)
+
+# Import the prebuilt micro-ROS static library
+add_library(microros STATIC IMPORTED GLOBAL)
+set_target_properties(microros PROPERTIES
+    IMPORTED_LOCATION ${MICROROS_SDK}/libmicroros/libmicroros.a
+)
+
 # Define the executable
+# pico_uart_transport.c is part of the micro-ROS SDK and must be compiled with
+# the same include paths; it is not a library, just a source file.
 add_executable(acc
     main.c
     task_sensor.c
@@ -6,7 +16,20 @@ add_executable(acc
     task_alert.c
     task_brake.c
     task_oled.c
+    task_microros.c
     # i2c_manager.c
+)
+
+# micro-ROS headers
+target_include_directories(acc PRIVATE
+    ${MICROROS_SDK}/libmicroros/include
+)
+
+# Disable CRLF translation — micro-ROS uses binary framing, CRLF corrupts it
+target_compile_definitions(acc PRIVATE
+    PICO_UART_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_ENABLE_CRLF_SUPPORT=0
+    PICO_STDIO_DEFAULT_CRLF=0
 )
 
 # Aggiungi la libreria u8g2
@@ -19,8 +42,10 @@ target_link_libraries(acc
     hardware_timer
     hardware_pwm
     hardware_i2c
+    hardware_uart
     FreeRTOS-Kernel FreeRTOS-Kernel-Heap4
     u8g2
+    microros
 )
 
 # Configure Pico IO settings
