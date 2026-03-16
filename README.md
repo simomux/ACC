@@ -126,6 +126,16 @@ cp build/acc.uf2 /mnt/d/RPI-RP2/   # adjust drive letter as needed
 
 ### Automatic (recommended)
 
+> [!NOTE]
+> **First time only — manual bind required.**
+> Before using the automatic script you need to mark the device as shareable once.
+> Open **PowerShell (Administrator)** and run:
+> ```powershell
+> usbipd list                      # find the Pico's BUSID (e.g. 2-9)
+> usbipd bind --busid <BUSID>      # mark device as shareable (one-time)
+> ```
+> After this, `start_acc.bat` will handle the attach automatically every session.
+
 From **Windows Explorer**, double-click `start_acc.bat`.
 
 > Using the `.bat` launcher avoids the PowerShell UNC security prompt that appears when running `.ps1` files directly from the WSL filesystem.

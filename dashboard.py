@@ -41,7 +41,7 @@ HZ              = 10        # Pico publish rate
 WINDOW_SAMPLES  = WINDOW_S * HZ
 OUTLIER_THRESH  = 5.0       # cm delta between raw and filtered → counts as outlier
 FALSE_POS_MAX_S = 0.4       # brake event shorter than this → false positive
-V_EMA_ALPHA     = 0.15      # EMA smoothing factor for relative velocity (lower = smoother)
+V_REGRESSION_N  = 10        # samples used for linear-regression velocity estimate (~1 s at 10 Hz)
 V_NOISE_FLOOR   = 1.0       # cm/s — below this |v| is treated as zero for TTC
 HYST_MARGIN_CM  = 10.0      # cm extra buffer to exit a worse zone (spatial hysteresis)
 HYST_FRAMES     = 3         # consecutive frames needed to confirm a degradation
@@ -102,8 +102,8 @@ class AccSubscriber(Node):
         self.create_subscription(Float32, 'acc/threshold',    self._cb_thr,      qos)
         self.create_subscription(Float32, 'acc/lux',          self._cb_lux,      qos)
         self.create_subscription(Bool,    'acc/brake',        self._cb_brake,    qos)
-        self._prev_dist = None
-        self._prev_time = None
+        self._reg_dist = deque(maxlen=V_REGRESSION_N)
+        self._reg_time = deque(maxlen=V_REGRESSION_N)
 
     def _cb_dist(self, msg):
         with lock:
@@ -118,16 +118,24 @@ class AccSubscriber(Node):
             stats['noise_count'] += 1
             stats['samples']     += 1
 
-            # ── relative velocity (EMA of discrete derivative) ────────────
+            # ── relative velocity via linear regression on sliding window ──
             now = time.monotonic()
-            if self._prev_dist is not None:
-                dt = now - self._prev_time
-                if dt >= 0.01:   # guard against duplicate/fast callbacks
-                    v_raw = (msg.data - self._prev_dist) / dt   # cm/s
-                    stats['v_rel'] = (V_EMA_ALPHA * v_raw
-                                      + (1.0 - V_EMA_ALPHA) * stats['v_rel'])
-            self._prev_dist = msg.data
-            self._prev_time = now
+            self._reg_dist.append(msg.data)
+            self._reg_time.append(now)
+
+            if len(self._reg_dist) >= 4:
+                # Ordinary least squares slope: cov(t,d)/var(t)
+                n  = len(self._reg_dist)
+                t0 = self._reg_time[0]
+                ts = [t - t0 for t in self._reg_time]
+                ds = list(self._reg_dist)
+                mean_t = sum(ts) / n
+                mean_d = sum(ds) / n
+                num = sum((ti - mean_t) * (di - mean_d) for ti, di in zip(ts, ds))
+                den = sum((ti - mean_t) ** 2 for ti in ts)
+                if den > 0:
+                    stats['v_rel'] = num / den  # cm/s
+
             buf_vel.append(stats['v_rel'])
 
             # ── TTC: meaningful only when approaching (v_rel < -noise_floor)
