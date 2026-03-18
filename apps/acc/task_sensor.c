@@ -7,29 +7,21 @@
 #include "common.h"
 #include "task_sensor.h"
 
-/*
- * HC-SR04 measurement:
- *   1. Send 10us HIGH pulse on trigger
- *   2. Measure echo pulse duration
- *   3. distance_cm = duration_us / 58
- */
+
 
 #define ECHO_TIMEOUT_US  25000  /* ~4.3m max range */
 
 static float measure_distance_cm(void) {
-    /* Send trigger pulse */
     gpio_put(SENSOR_TRIGGER_PIN, true);
-    busy_wait_us(10);
+    busy_wait_us(10);   // Cannot use vTaskDelay because we would wait 1ms
     gpio_put(SENSOR_TRIGGER_PIN, false);
 
-    /* Wait for echo to go HIGH */
     absolute_time_t deadline = make_timeout_time_us(ECHO_TIMEOUT_US);
     while (!gpio_get(SENSOR_ECHO_PIN)) {
         if (absolute_time_diff_us(get_absolute_time(), deadline) <= 0)
             return -1.0f;
     }
 
-    /* Measure echo HIGH duration */
     absolute_time_t start = get_absolute_time();
     while (gpio_get(SENSOR_ECHO_PIN)) {
         if (absolute_time_diff_us(start, get_absolute_time()) > ECHO_TIMEOUT_US)
@@ -40,7 +32,8 @@ static float measure_distance_cm(void) {
     return (float)duration_us / 58.0f;
 }
 
-/* Median-of-3 filter: rejects outlier readings from the HC-SR04 */
+/* Median-of-3 filter: rejects single outlier readings caused by reflections
+   or the HC-SR04 occasionally returning a spurious short pulse. */
 static float median3(float a, float b, float c) {
     if (a > b) { float t = a; a = b; b = t; }
     if (b > c) { b = c; }
@@ -48,7 +41,9 @@ static float median3(float a, float b, float c) {
     return b;
 }
 
-#define INTER_MEASUREMENT_MS  10  /* gap between readings for echo decay */
+/* Gap between back-to-back pings: lets the ultrasonic echo fully decay before
+   the next trigger so the sensor does not pick up its own previous pulse. */
+#define INTER_MEASUREMENT_MS  10
 
 void vTaskSensor(void *params) {
     (void)params;
@@ -64,7 +59,6 @@ void vTaskSensor(void *params) {
 
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
-        /* Take 3 rapid measurements */
         float samples[3];
         int valid = 0;
         for (int i = 0; i < 3; i++) {
@@ -73,7 +67,8 @@ void vTaskSensor(void *params) {
             if (i < 2) vTaskDelay(pdMS_TO_TICKS(INTER_MEASUREMENT_MS));
         }
 
-        /* Publish first valid raw sample (pre-filter) for dashboard comparison */
+        /* Publish the unfiltered first valid sample for dashboard comparison
+           against the median-filtered value (used in the dashboard graph. */
         for (int i = 0; i < 3; i++) {
             if (samples[i] >= 0.0f) {
                 xQueueOverwrite(xQueueDistanceRaw, &samples[i]);
@@ -85,7 +80,6 @@ void vTaskSensor(void *params) {
             float distance = median3(samples[0], samples[1], samples[2]);
             xQueueOverwrite(xQueueDistance, &distance);
         } else if (valid > 0) {
-            /* If only some readings valid, use first valid one */
             for (int i = 0; i < 3; i++) {
                 if (samples[i] >= 0.0f) {
                     xQueueOverwrite(xQueueDistance, &samples[i]);

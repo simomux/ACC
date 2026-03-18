@@ -54,8 +54,8 @@ int main(void) {
     xQueueOverwrite(xQueueThreshold,   &init_thr);
     xQueueOverwrite(xQueueBrake,       &init_brk);
     xQueueOverwrite(xQueueLux,         &init_lux);
-    /* Create tasks */
 
+    /* Create tasks */
     xTaskCreate(vTaskSensor,     "Sensor", TASK_STACK_SIZE, NULL, SENSOR_TASK_PRIORITY, NULL);
     xTaskCreate(vTaskBrake,      "Brake",  512, NULL, BRAKE_TASK_PRIORITY,  NULL);
     xTaskCreate(vTaskDimmer,     "Dimmer", TASK_STACK_SIZE, NULL, DIMMER_TASK_PRIORITY, NULL);

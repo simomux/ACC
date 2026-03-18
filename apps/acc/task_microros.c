@@ -16,18 +16,21 @@
 
 #include "task_microros.h"
 
-/* Shared mailbox queues defined in main.c */
 extern QueueHandle_t xQueueDistance;
 extern QueueHandle_t xQueueDistanceRaw;
 extern QueueHandle_t xQueueThreshold;
 extern QueueHandle_t xQueueBrake;
 extern QueueHandle_t xQueueLux;
 
-/* ── clock_gettime stub ──────────────────────────────────────────────────────
- * libmicroros.a was compiled against POSIX and calls clock_gettime internally.
- * On bare metal there is no OS to provide it, so we implement it using the
- * Pico hardware timer (64-bit µs counter, never overflows in practice).
- * ─────────────────────────────────────────────────────────────────────────── */
+/* clock_gettime stub — required because libmicroros.a was compiled for a POSIX
+    environment and calls clock_gettime() internally to timestamp messages.
+    On bare metal the C runtime has no OS to forward that call to, so the linker
+    would fail with "undefined reference to clock_gettime".
+    We satisfy the symbol by implementing it ourselves using the Pico's 64-bit
+    hardware µs counter (time_us_64). The counter starts at boot and at 64 bits
+    it would overflow after ~585,000 years, so wrap-around is not a concern.
+    The clk_id argument (CLOCK_REALTIME, CLOCK_MONOTONIC, etc.) is ignored
+    because we only have one clock source on this hardware. */
 int clock_gettime(clockid_t clk_id, struct timespec *tp)
 {
     (void)clk_id;
@@ -37,12 +40,8 @@ int clock_gettime(clockid_t clk_id, struct timespec *tp)
     return 0;
 }
 
-/* ── USB CDC transport ───────────────────────────────────────────────────────
- * Uses the Pico SDK stdio USB layer (already initialised by stdio_init_all).
- * No external UART adapter needed — same cable as power.
- * IMPORTANT: remove all printf() calls from other tasks while micro-ROS is
- * running; stray bytes corrupt the binary framing.
- * ─────────────────────────────────────────────────────────────────────────── */
+// Uses the Pico SDK stdio USB layer (already initialised by stdio_init_all).
+
 static bool usb_transport_open(struct uxrCustomTransport *t)  { (void)t; return true; }
 static bool usb_transport_close(struct uxrCustomTransport *t) { (void)t; return true; }
 
@@ -70,8 +69,8 @@ static size_t usb_transport_read(struct uxrCustomTransport *t,
     return i;
 }
 
-/* ── helpers ─────────────────────────────────────────────────────────────── */
 #define RCCHECK(fn) if ((fn) != RCL_RET_OK) { return false; }
+
 
 static bool microros_init(rcl_node_t      *node,
                            rclc_support_t  *support,
@@ -85,6 +84,7 @@ static bool microros_init(rcl_node_t      *node,
     RCCHECK(rclc_support_init(support, 0, NULL, allocator));
     RCCHECK(rclc_node_init_default(node, "acc_node", "", support));
 
+    // ROS2 topics
     RCCHECK(rclc_publisher_init_best_effort(pub_dist, node,
         ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Float32), "acc/distance"));
     RCCHECK(rclc_publisher_init_best_effort(pub_dist_raw, node,
@@ -119,9 +119,7 @@ static void microros_fini(rcl_node_t      *node,
 #pragma GCC diagnostic pop
 }
 
-/* ── task ────────────────────────────────────────────────────────────────── */
-void vTaskMicroROS(void *pvParameters)
-{
+void vTaskMicroROS(void *pvParameters) {
     (void)pvParameters;
 
     rmw_uros_set_custom_transport(

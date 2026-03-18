@@ -7,22 +7,10 @@
 #include "common.h"
 #include "task_brake.h"
 
-/* ------------------------------------------------------------------ */
-/*  BH1750 I2C bus — dedicated i2c1, independent from OLED             */
-/* ------------------------------------------------------------------ */
-
 #define BH1750_BAUDRATE  100000
-
-/* ------------------------------------------------------------------ */
-/*  BH1750 constants                                                    */
-/* ------------------------------------------------------------------ */
 
 #define BH1750_POWER_ON   0x01
 #define BH1750_CONT_HRES  0x10  /* Continuous high-resolution mode (1 lx) */
-
-/* ------------------------------------------------------------------ */
-/*  BH1750 driver                                                       */
-/* ------------------------------------------------------------------ */
 
 static bool bh1750_init(void) {
     i2c_init(BH1750_I2C_BUS, BH1750_BAUDRATE);
@@ -47,20 +35,15 @@ static bool bh1750_init(void) {
     return true;
 }
 
-/* Read illuminance in lux. Returns -1 on error. */
+/* BH1750 returns 16-bit raw value MSB-first. Lux = raw / 1.2 (per datasheet). */
 static float bh1750_read_lux(void) {
     uint8_t buf[2];
     if (i2c_read_blocking(BH1750_I2C_BUS, BH1750_ADDR, buf, 2, false) < 0)
         return -1.0f;
 
-    /* BH1750 returns 16-bit raw value, MSB first. Lux = raw / 1.2 */
     uint16_t raw = ((uint16_t)buf[0] << 8) | buf[1];
     return (float)raw / 1.2f;
 }
-
-/* ------------------------------------------------------------------ */
-/*  Task                                                                */
-/* ------------------------------------------------------------------ */
 
 void vTaskBrake(void *params) {
     (void)params;
@@ -73,7 +56,10 @@ void vTaskBrake(void *params) {
 
     printf("vTaskBrake started\n");
 
-    /* Capture ambient light level at startup as baseline */
+    /* Wait for the BH1750 to complete its first measurement (≥120 ms in
+       continuous high-res mode) then capture ambient light as a baseline.
+       All subsequent readings are compared against this value so the brake
+       detection adapts to the environment (tunnel, night, direct sunlight). */
     vTaskDelay(pdMS_TO_TICKS(200));
     float ambient = bh1750_read_lux();
     if (ambient < 0.0f) ambient = 0.0f;

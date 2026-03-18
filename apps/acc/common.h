@@ -47,8 +47,8 @@
 
 /* OLED display (I2C) */
 #define OLED_I2C_BUS        i2c1
-#define OLED_SDA_PIN        18
-#define OLED_SCL_PIN        19
+#define OLED_SDA_PIN        18  // GP18 - Physical 24
+#define OLED_SCL_PIN        19  // GP19 - Physical 25
 #define OLED_ADDR           0x3C
 
 

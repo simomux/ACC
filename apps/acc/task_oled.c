@@ -8,23 +8,16 @@
 #include "common.h"
 #include "u8g2.h"
 
-/* ------------------------------------------------------------------ */
-/*  OLED I2C bus — dedicated i2c1, independent from BH1750             */
-/* ------------------------------------------------------------------ */
+
 
 #define OLED_BAUDRATE       100000
-#define OLED_I2C_TIMEOUT_MS 50      /* max ms per I2C write before bus reset */
-
-/* Refresh rate cap: one frame every N ms                              */
-#define OLED_REFRESH_MS 500
+#define OLED_I2C_TIMEOUT_MS 50      // max ms per I2C write before bus reset
+#define OLED_REFRESH_MS     500
 
 static u8g2_t u8g2;
 
-/* ------------------------------------------------------------------ */
-/*  Bus reset — low-level only, no u8g2 calls (safe to call from       */
-/*  inside the u8g2 callback without recursion risk)                   */
-/* ------------------------------------------------------------------ */
-
+/* Low-level I2C bus reset — deliberately avoids any u8g2 call so it is
+   safe to invoke from within the u8g2 byte callback without recursion. */
 static void oled_bus_reset(void)
 {
     i2c_deinit(OLED_I2C_BUS);
@@ -36,12 +29,9 @@ static void oled_bus_reset(void)
     gpio_pull_up(OLED_SCL_PIN);
 }
 
-/* ------------------------------------------------------------------ */
-/*  I2C write with timeout + automatic bus + u8g2 reset on any error.  */
-/*  in_recovery flag breaks the recursion:                             */
-/*    oled_i2c_write → u8g2_InitDisplay → callback → oled_i2c_write   */
-/* ------------------------------------------------------------------ */
-
+/* u8g2 does not handle I2C errors internally — it assumes the transport
+   always succeeds. We detect failures here via a hard timeout and recover
+   by resetting the bus and re-initialising the display. */
 static void oled_i2c_write(const uint8_t *buf, uint8_t len)
 {
     static bool in_recovery = false;
@@ -60,10 +50,6 @@ static void oled_i2c_write(const uint8_t *buf, uint8_t len)
         in_recovery = false;
     }
 }
-
-/* ------------------------------------------------------------------ */
-/*  u8g2 I2C byte callback                                              */
-/* ------------------------------------------------------------------ */
 
 uint8_t u8x8_byte_pico_i2c(u8x8_t *u8x8,
                             uint8_t  msg,
@@ -89,7 +75,7 @@ uint8_t u8x8_byte_pico_i2c(u8x8_t *u8x8,
                 buffer[buf_idx++] = *data++;
                 if (buf_idx == sizeof(buffer)) {
                     oled_i2c_write(buffer, buf_idx);
-                    buf_idx = 0;  /* always reset after flush */
+                    buf_idx = 0;  // always reset after flush
                 }
             }
             break;
@@ -98,7 +84,7 @@ uint8_t u8x8_byte_pico_i2c(u8x8_t *u8x8,
         case U8X8_MSG_BYTE_END_TRANSFER:
             if (buf_idx > 0)
                 oled_i2c_write(buffer, buf_idx);
-            buf_idx = 0;  /* always reset, even if write failed */
+            buf_idx = 0;  // always reset, even if write failed
             break;
 
         default:
@@ -107,10 +93,6 @@ uint8_t u8x8_byte_pico_i2c(u8x8_t *u8x8,
 
     return 1;
 }
-
-/* ------------------------------------------------------------------ */
-/*  u8g2 delay / GPIO callback                                          */
-/* ------------------------------------------------------------------ */
 
 uint8_t u8x8_gpio_and_delay_pico(u8x8_t *u8x8,
                                   uint8_t  msg,
@@ -129,10 +111,6 @@ uint8_t u8x8_gpio_and_delay_pico(u8x8_t *u8x8,
 
     return 1;
 }
-
-/* ------------------------------------------------------------------ */
-/*  OLED init                                                           */
-/* ------------------------------------------------------------------ */
 
 static void oled_init(void)
 {
@@ -154,10 +132,6 @@ static void oled_init(void)
     u8g2_SetPowerSave(&u8g2, 0);
 }
 
-/* ------------------------------------------------------------------ */
-/*  Task                                                                */
-/* ------------------------------------------------------------------ */
-
 void vTaskOled(void *pvParameters)
 {
     (void)pvParameters;
@@ -178,7 +152,12 @@ void vTaskOled(void *pvParameters)
         xQueuePeek(xQueueThreshold, &threshold, 0);
         xQueuePeek(xQueueBrake,     &brake,     0);
         xQueuePeek(xQueueLux,       &lux,       0);
-        vTaskDelay(pdMS_TO_TICKS(5)); // Attesa di 5ms dopo la lettura del BH1750
+
+        /* Short yield after reading the lux queue: vTaskBrake writes lux and
+           brake in two separate xQueueOverwrite calls. Without this delay we
+           could read a fresh lux value paired with a stale brake value if 
+           the scheduler switches tasks between the two peeks. */
+        vTaskDelay(pdMS_TO_TICKS(5));
 
         u8g2_FirstPage(&u8g2);
         do {

@@ -17,10 +17,15 @@ void vTaskDimmer(void *params) {
 
     TickType_t xLastWake = xTaskGetTickCount();
     for (;;) {
-        uint16_t raw = adc_read();  /* 0-4095 (12-bit) */
-        /* Logarithmic mapping: more precision at low thresholds */
-        float normalized = (float)raw / 4095.0f;               /* 0.0 – 1.0 */
-        float curved = normalized * normalized;                 /* quadratic curve */
+        uint16_t raw = adc_read();
+        
+        /* Quadratic curve (x²) maps the potentiometer range non-linearly:
+           the lower half of the knob covers the near-distance range where
+           precision matters most, while the upper half spans the wider
+           distances where coarse steps are acceptable. This was done to
+           increase sensitivity in the lower range. */
+        float normalized = (float)raw / 4095.0f;
+        float curved = normalized * normalized;
         float threshold = THRESHOLD_MIN_CM
             + curved * (THRESHOLD_MAX_CM - THRESHOLD_MIN_CM);
 

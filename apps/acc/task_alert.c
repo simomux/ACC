@@ -7,16 +7,13 @@
 #include "common.h"
 #include "task_alert.h"
 
-/* --- LED helpers (PWM driven for color mixing) --- */
-
-#define LED_PWM_WRAP  255  /* 8-bit resolution */
+#define LED_PWM_WRAP  255   // Using PWM instead of boolen to light RGB LED for more visible colors
 
 static void led_rgb_init(void) {
     gpio_set_function(LED_R_PIN, GPIO_FUNC_PWM);
     gpio_set_function(LED_G_PIN, GPIO_FUNC_PWM);
     gpio_set_function(LED_B_PIN, GPIO_FUNC_PWM);
 
-    /* Configure each slice with the same wrap value */
     uint slices[] = {
         pwm_gpio_to_slice_num(LED_R_PIN),
         pwm_gpio_to_slice_num(LED_G_PIN),
@@ -26,20 +23,16 @@ static void led_rgb_init(void) {
         pwm_set_wrap(slices[i], LED_PWM_WRAP);
         pwm_set_enabled(slices[i], true);
     }
-    /* Start with all LEDs off */
     pwm_set_gpio_level(LED_R_PIN, 0);
     pwm_set_gpio_level(LED_G_PIN, 0);
     pwm_set_gpio_level(LED_B_PIN, 0);
 }
 
-/* Set LED color with 0-255 brightness per channel */
 static void led_rgb_set(uint8_t r, uint8_t g, uint8_t b) {
     pwm_set_gpio_level(LED_R_PIN, r);
     pwm_set_gpio_level(LED_G_PIN, g);
     pwm_set_gpio_level(LED_B_PIN, b);
 }
-
-/* --- Buzzer helpers --- */
 
 static uint buzzer_slice;
 
@@ -49,11 +42,11 @@ static void buzzer_init(void) {
     pwm_set_enabled(buzzer_slice, false);
 }
 
-/* Start the buzzer at a given frequency; duty_div controls volume (higher = quieter) */
+/* Frequency is set by adjusting the PWM wrap value. For low frequencies the
+   wrap would exceed 16 bits, so we scale up the clock divider until it fits. */
 static void buzzer_on(uint freq_hz, uint duty_div) {
-    uint32_t clk = 125000000;  /* default system clock */
+    uint32_t clk = 125000000;
     uint32_t wrap = clk / freq_hz - 1;
-    /* Keep wrap within 16-bit range using clock divider */
     uint16_t div = 1;
     while (wrap > 65535) {
         div++;
@@ -69,15 +62,11 @@ static void buzzer_off(void) {
     pwm_set_enabled(buzzer_slice, false);
 }
 
-/* --- Mute button helpers --- */
-
 static void mute_button_init(void) {
     gpio_init(MUTE_BUTTON_PIN);
     gpio_set_dir(MUTE_BUTTON_PIN, GPIO_IN);
     gpio_pull_up(MUTE_BUTTON_PIN);
 }
-
-/* --- Alert task --- */
 
 void vTaskAlert(void *params) {
     (void)params;
@@ -91,7 +80,7 @@ void vTaskAlert(void *params) {
     float threshold = THRESHOLD_MAX_CM;
     bool  braking   = false;
     bool  muted     = false;
-    bool  btn_prev  = true;  /* pull-up: idle = HIGH */
+    bool  btn_prev  = true;  // pull-up: idle = HIGH
     uint  tick_count = 0;
 
     TickType_t xLastWake = xTaskGetTickCount();
@@ -100,7 +89,7 @@ void vTaskAlert(void *params) {
         xQueuePeek(xQueueThreshold, &threshold, 0);
         xQueuePeek(xQueueBrake,     &braking,   0);
 
-        /* Detect button press (falling edge: HIGH → LOW) */
+        // Toggle mute on falling edge
         bool btn_now = gpio_get(MUTE_BUTTON_PIN);
         if (btn_prev && !btn_now) {
             muted = !muted;
@@ -108,13 +97,13 @@ void vTaskAlert(void *params) {
         }
         btn_prev = btn_now;
 
-        /* Warning zone: threshold + 30% + 20cm fixed margin */
+        // Warning zone starts 30% beyond the brake threshold plus a fixed 20 cm
         float warning_dist = threshold * 1.3f + 20.0f;
 
+        // tick_count drives the buzzer blink patterns without a separate timer
         tick_count++;
 
         if (braking) {
-            /* Brake light detected — flashing red + continuous buzzer */
             if (tick_count % 4 < 2) {
                 led_rgb_set(255, 0, 0);
             } else {
@@ -122,19 +111,18 @@ void vTaskAlert(void *params) {
             }
             if (!muted) buzzer_on(4000, 4); else buzzer_off();
         } else if (distance > warning_dist) {
-            /* Far away — green, buzzer off */
             led_rgb_set(0, 255, 0);
             buzzer_off();
         } else if (distance > threshold) {
-            /* Approaching — orange, slow beep (~2 Hz) */
+            // Approaching — slow beep (~2 Hz)
             led_rgb_set(255, 60, 0);
             if (!muted && (tick_count % 10) < 5) {
-                buzzer_on(1000, 8); /* lower duty = quieter at low frequency */
+                buzzer_on(1000, 8);
             } else {
                 buzzer_off();
             }
         } else {
-            /* Too close — red, fast beep (~10 Hz) */
+            // Too close — fast beep (~10 Hz)
             led_rgb_set(255, 0, 0);
             if (!muted && (tick_count % 2)) {
                 buzzer_on(3000, 4);
