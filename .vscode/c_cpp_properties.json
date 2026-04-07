@@ -21,7 +21,8 @@
             "forcedInclude": [
                 "${workspaceFolder}/FreeRTOSConfig.h"
             ],
-            "compilerPath": "/usr/bin/arm-none-eabi-gcc",
+            "compilerPath": "/opt/homebrew/bin/arm-none-eabi-gcc",
+            "compileCommands": "${workspaceFolder}/build/compile_commands.json",
             "cStandard": "c11",
             "cppStandard": "c++17",
             "intelliSenseMode": "gcc-arm"
