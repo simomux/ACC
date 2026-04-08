@@ -1,10 +1,12 @@
 # Adaptive Cruise Control
 
-Demo of an ACC system on a Raspberry Pi Pico W using FreeRTOS with dual-core task scheduling and ROS 2 telemetry via micro-ROS.
+Simulation of an Adaptive Cruise Control system running on a Raspberry Pi Pico W with FreeRTOS.
 
-- **Core 1** - `vTaskMicroROS` (pinned): publishes telemetry over USB serial to a ROS 2 agent on the PC
-- **FreeRTOS scheduler** - all other tasks run dynamically: HC-SR04 (distance, median-filtered), BH1750 (brake light detection), potentiometer (threshold), RGB LED + buzzer (alert), OLED display
-- **Dashboard** - Browser-based live dashboard (Flask + Plotly.js) with raw vs filtered distance, velocity, lux graph, filter statistics and brake event detection
+An HC-SR04 ultrasonic sensor takes the place of a radar to measure the distance from the vehicle ahead. Readings are passed through a median-of-3 filter to suppress outliers, and the alert threshold is set in real time via a potentiometer.
+
+A BH1750 ambient-light sensor detects the brake-light flash of the front vehicle, triggering an immediate warning independent of distance. A multi-level alert system drives an RGB LED and buzzer to notify the driver; severity escalates from a gentle warning to a critical stop signal.
+
+An SH1106 OLED display acts as the non-safety-critical onboard instrument, showing distance, lux, threshold, and alert level to the driver without any dependence on the host machine. A micro-ROS node bridges the ECU to a ROS 2 network and streams all sensor data over USB serial to a host-side dashboard.
 
 ## Hardware
 
@@ -200,10 +202,12 @@ Hold **BOOTSEL** on the Pico, plug in USB - it mounts as `RPI-RP2`.
 > **First time only - manual bind required.**
 > Before using the automatic script you need to mark the device as shareable once.
 > Open **PowerShell (Administrator)** and run:
+>
 > ```powershell
 > usbipd list                      # find the Pico's BUSID (e.g. 2-9)
 > usbipd bind --busid <BUSID>      # mark device as shareable (one-time)
 > ```
+>
 > After this, `start_acc.bat` will handle the attach automatically every session.
 
 Run `start_acc.bat`. The script will:
